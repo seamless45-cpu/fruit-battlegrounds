@@ -150,8 +150,14 @@ export class UI {
   buildSettings() {
     const body = document.getElementById('setBody');
     const gfx = this.game.world.gfx;
-    const seg = (label, key, opts) => {
+    const block = (label, hint, control) => {
       const wrap = document.createElement('div'); wrap.className = 'set-row';
+      const copy = document.createElement('div'); copy.className = 'set-copy';
+      copy.innerHTML = `<b>${label}</b><small>${hint}</small>`;
+      wrap.appendChild(copy); wrap.appendChild(control);
+      return wrap;
+    };
+    const seg = (label, hint, key, opts) => {
       const segEl = document.createElement('div'); segEl.className = 'seg';
       opts.forEach((o) => {
         const b = document.createElement('button'); b.textContent = o;
@@ -163,52 +169,47 @@ export class UI {
         });
         segEl.appendChild(b);
       });
-      wrap.innerHTML = `<span>${label}</span>`; wrap.appendChild(segEl);
-      return wrap;
+      return block(label, hint, segEl);
     };
-    const toggle = (label, key) => {
-      const wrap = document.createElement('div'); wrap.className = 'set-row';
+    const toggle = (label, hint, key) => {
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!gfx[key];
       cb.addEventListener('change', () => { this.game.world.setGfx(key, cb.checked); if (key === 'bloom') this.game.applyBloom(); });
-      wrap.innerHTML = `<span>${label}</span>`; wrap.appendChild(cb);
-      return wrap;
+      return block(label, hint, cb);
     };
-    const slider = (label, key, min, max, step) => {
-      const wrap = document.createElement('div'); wrap.className = 'set-row';
+    const slider = (label, hint, key, min, max, step) => {
+      const hold = document.createElement('div'); hold.className = 'set-slide';
       const s = document.createElement('input'); s.type = 'range'; s.min = min; s.max = max; s.step = step; s.value = gfx[key];
       const val = document.createElement('span'); val.textContent = gfx[key];
       s.addEventListener('input', () => { this.game.world.setGfx(key, parseFloat(s.value)); val.textContent = s.value; });
-      wrap.innerHTML = `<span>${label}</span>`; wrap.appendChild(s); wrap.appendChild(val);
-      return wrap;
+      hold.appendChild(s); hold.appendChild(val);
+      return block(label, hint, hold);
     };
 
-    body.appendChild(seg('Quality', 'quality', ['Low', 'Medium', 'High', 'Ultra']));
-    body.appendChild(toggle('Shadows', 'shadows'));
-    body.appendChild(toggle('Bloom / Glow', 'bloom'));
-    body.appendChild(toggle('Fog', 'fog'));
-    body.appendChild(toggle('Particles', 'particles'));
-    body.appendChild(toggle('Clouds', 'clouds'));
-    body.appendChild(toggle('Soft-lock Aim', 'softLock'));
-    body.appendChild(toggle('Invert Look X', 'invertLookX'));
-    body.appendChild(toggle('Invert Look Y', 'invertLookY'));
-    body.appendChild(slider('Look Sensitivity', 'lookSens', 0.4, 2.2, 0.05));
-    body.appendChild(slider('Field of View', 'fov', 45, 85, 1));
-    body.appendChild(slider('Free Aim Mix', 'freeAim', 0, 1, 0.05));
-    body.appendChild(slider('Exposure', 'exposure', 0.7, 1.8, 0.02));
-    body.appendChild(slider('Resolution Scale', 'pixelRatioScale', 0.5, 1.5, 0.05));
+    body.appendChild(seg('Quality', 'Overall 3D detail. Low is fastest; Ultra sharpens shadows and pixels.', 'quality', ['Low', 'Medium', 'High', 'Ultra']));
+    body.appendChild(toggle('Shadows', 'Sun shadows on fighters and the island. Turn off on slow devices.', 'shadows'));
+    body.appendChild(toggle('Bloom / Glow', 'Soft light bloom on explosions and gold. Heavy on some GPUs.', 'bloom'));
+    body.appendChild(toggle('Fog', 'Distance haze that fades the horizon. Off makes the sea razor-sharp.', 'fog'));
+    body.appendChild(toggle('Particles', 'Sparks, debris, and ember trails. Off cuts the busiest skill VFX.', 'particles'));
+    body.appendChild(toggle('Clouds', 'Daytime cloud puffs drifting over the arena.', 'clouds'));
+    body.appendChild(toggle('Soft-lock Aim', 'Skills snap toward the pirate nearest screen center.', 'softLock'));
+    body.appendChild(toggle('Invert Look X', 'Swap left/right when you drag to look.', 'invertLookX'));
+    body.appendChild(toggle('Invert Look Y', 'Swap up/down when you drag to look.', 'invertLookY'));
+    body.appendChild(slider('Look Sensitivity', 'How far the camera turns per drag. Higher is snappier.', 'lookSens', 0.4, 2.2, 0.05));
+    body.appendChild(slider('Field of View', 'Camera zoom. Higher sees more of the island at once.', 'fov', 45, 85, 1));
+    body.appendChild(slider('Free Aim Mix', '0 = always screen-center aim. 1 = aim follows the cursor.', 'freeAim', 0, 1, 0.05));
+    body.appendChild(slider('Exposure', 'Overall scene brightness after tone-mapping.', 'exposure', 0.7, 1.8, 0.02));
+    body.appendChild(slider('Resolution Scale', 'Internal render scale. Lower values raise FPS.', 'pixelRatioScale', 0.5, 1.5, 0.05));
 
-    const sfxRow = document.createElement('div'); sfxRow.className = 'set-row';
     const sfxCb = document.createElement('input'); sfxCb.type = 'checkbox'; sfxCb.checked = this.game.sfx.enabled;
     sfxCb.addEventListener('change', () => { this.game.sfx.enabled = sfxCb.checked; if (sfxCb.checked) this.game.sfx.unlock(); });
-    sfxRow.innerHTML = '<span>Sound FX</span>'; sfxRow.appendChild(sfxCb);
-    body.appendChild(sfxRow);
+    body.appendChild(block('Sound FX', 'Analog combat sounds. No 8-bit beeps. Needs a tap to unlock audio.', sfxCb));
 
-    const volRow = document.createElement('div'); volRow.className = 'set-row';
+    const volHold = document.createElement('div'); volHold.className = 'set-slide';
     const vol = document.createElement('input'); vol.type = 'range'; vol.min = 0; vol.max = 1; vol.step = 0.05; vol.value = this.game.sfx.volume;
     const volVal = document.createElement('span'); volVal.textContent = this.game.sfx.volume;
     vol.addEventListener('input', () => { this.game.sfx.setVolume(parseFloat(vol.value)); volVal.textContent = vol.value; this.game.sfx.unlock(); });
-    volRow.innerHTML = '<span>SFX Volume</span>'; volRow.appendChild(vol); volRow.appendChild(volVal);
-    body.appendChild(volRow);
+    volHold.appendChild(vol); volHold.appendChild(volVal);
+    body.appendChild(block('SFX Volume', 'Master volume for slashes, impacts, gacha, and jumps.', volHold));
 
     const openSettings = () => this.togglePanel('settingsPanel');
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
@@ -242,7 +243,8 @@ export class UI {
     document.getElementById('questClose').addEventListener('click', () => this.closePanel('questPanel'));
     document.getElementById('gachaBtn').addEventListener('click', () => { this.togglePanel('gachaPanel'); this.renderGacha(); });
     document.getElementById('gachaClose').addEventListener('click', () => this.closePanel('gachaPanel'));
-    document.getElementById('gachaSpin').addEventListener('click', () => this.game.spinGacha());
+    document.getElementById('gachaSpin').addEventListener('click', () => this.game.spinGacha(1));
+    document.getElementById('gachaSpin10').addEventListener('click', () => this.game.spinGacha(10));
     const talkBtn = document.getElementById('talkBtn');
     if (talkBtn) {
       talkBtn.addEventListener('pointerdown', (e) => {
@@ -310,18 +312,45 @@ export class UI {
   }
 
   renderGacha(last) {
-    const pity = document.getElementById('gachaPity');
-    if (pity) {
-      const g = this.game.gacha;
-      pity.textContent = `Pity ${g.pityL}/${GACHA.legendaryPity} legendary · ${g.pityE}/${GACHA.epicPity} epic · soft from ${GACHA.softPityStart}`;
+    const g = this.game.gacha;
+    const feat = document.getElementById('gachaFeatured');
+    if (feat) feat.textContent = g.featured
+      ? `Featured legendary today: ${g.featured.emoji} ${g.featured.ref.name} (50% of legendary hits).`
+      : 'No featured legendary today.';
+    const rates = document.getElementById('gachaRates');
+    if (rates) {
+      const r = GACHA.rates;
+      rates.innerHTML = `<span>Common ${(r.common * 100).toFixed(0)}%</span><span>Rare ${(r.rare * 100).toFixed(0)}%</span><span>Epic ${(r.epic * 100).toFixed(0)}%</span><span>Legendary ${(r.legendary * 100).toFixed(0)}%</span>`;
     }
+    const lFill = document.getElementById('pityLFill');
+    const eFill = document.getElementById('pityEFill');
+    if (lFill) lFill.style.width = `${Math.min(100, (g.pityL / GACHA.legendaryPity) * 100)}%`;
+    if (eFill) eFill.style.width = `${Math.min(100, (g.pityE / GACHA.epicPity) * 100)}%`;
+    const lText = document.getElementById('pityLText');
+    const eText = document.getElementById('pityEText');
+    if (lText) lText.textContent = `${g.pityL}/${GACHA.legendaryPity}`;
+    if (eText) eText.textContent = `${g.pityE}/${GACHA.epicPity}`;
     const cost = document.getElementById('gachaCost');
     if (cost) cost.textContent = GACHA.cost.toLocaleString();
-    if (!last || !last.ok) return;
+    const ten = document.getElementById('gachaTenCost');
+    if (ten) ten.textContent = GACHA.tenCost.toLocaleString();
+    const hist = document.getElementById('gachaHistory');
+    if (hist) {
+      hist.innerHTML = g.history.slice(0, 10).map((h) =>
+        `<div class="gacha-chip ${h.rarity}" title="${h.name}">${h.emoji}</div>`
+      ).join('') || '<small>No pulls yet.</small>';
+    }
     const result = document.getElementById('gachaResult');
     if (!result) return;
+    if (!last || !last.ok) {
+      if (!result.innerHTML) result.innerHTML = '<small>Pull to reveal fruit, steel, or style.</small>';
+      return;
+    }
+    const pulls = last.pulls && last.pulls.length ? last.pulls : [{ item: last.item, rarity: last.rarity, dupe: last.dupe }];
     result.className = 'gacha-result ' + last.rarity;
-    result.innerHTML = `<span>${last.item.emoji}</span><b>${last.item.ref.name}</b><small>${last.rarity}${last.dupe ? ' · duplicate' : ''}</small>`;
+    result.innerHTML = pulls.map((p) =>
+      `<div class="gacha-card ${p.rarity}"><span>${p.item.emoji}</span><b>${p.item.ref.name}</b><small>${p.rarity}${p.dupe ? ' · dupe' : ''}</small></div>`
+    ).join('');
   }
 
   renderQuests() {

@@ -125,10 +125,18 @@
 
     <aside id="gachaPanel" class="hidden" role="dialog" aria-label="Gacha">
       <div class="set-head"><span>FRUIT GACHA</span><button id="gachaClose" type="button" aria-label="Close gacha">✕</button></div>
-      <p class="panel-copy">Spin for fruits, swords, and styles. Pity guarantees a legendary every <b>75</b> and an epic every <b>12</b>. Soft pity starts at 50.</p>
-      <p class="panel-copy" id="gachaPity">Pity 0/75 legendary · 0/12 epic</p>
-      <button id="gachaSpin" type="button" class="gacha-spin">SPIN · <b id="gachaCost">800</b> money</button>
+      <p class="panel-copy" id="gachaFeatured">Today's featured legendary rotates at midnight.</p>
+      <div class="gacha-rates" id="gachaRates"></div>
+      <div class="pity-row"><span>Legendary pity</span><div class="pity-bar"><i id="pityLFill"></i></div><b id="pityLText">0/75</b></div>
+      <div class="pity-row"><span>Epic pity</span><div class="pity-bar epic"><i id="pityEFill"></i></div><b id="pityEText">0/12</b></div>
+      <p class="panel-copy" id="gachaPity">Soft pity starts at 50. Dupes refund money by rarity. 10-pull is 10% off and guarantees a rare.</p>
+      <div class="gacha-actions">
+        <button id="gachaSpin" type="button" class="gacha-spin">×1 · <b id="gachaCost">800</b></button>
+        <button id="gachaSpin10" type="button" class="gacha-spin ten">×10 · <b id="gachaTenCost">7,200</b></button>
+      </div>
       <div id="gachaResult" class="gacha-result"></div>
+      <h4 class="panel-h">Recent pulls</h4>
+      <div id="gachaHistory" class="gacha-history"></div>
     </aside>
 
     <aside id="codesPanel" class="hidden" role="dialog" aria-label="Gift codes">

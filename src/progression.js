@@ -64,11 +64,49 @@ export class Gacha {
   constructor() {
     this.pityL = 0;
     this.pityE = 0;
+    this.history = [];
+    this.featured = this._dailyFeatured();
+    this._load();
   }
-  roll(game) {
-    const cost = GACHA.cost;
-    if (game.tokens < cost) return { ok: false, message: `Need ${cost.toLocaleString()} money to spin.` };
-    game.tokens -= cost;
+  _dailyFeatured() {
+    const legends = GACHA_POOL.filter((p) => p.rarity === 'legendary');
+    const day = Math.floor(Date.now() / 86400000);
+    return legends.length ? legends[day % legends.length] : null;
+  }
+  _load() {
+    try {
+      const raw = JSON.parse(localStorage.getItem('fb_gacha') || 'null');
+      if (!raw) return;
+      this.pityL = raw.pityL || 0;
+      this.pityE = raw.pityE || 0;
+      this.history = Array.isArray(raw.history) ? raw.history.slice(0, 20) : [];
+    } catch (_) {}
+  }
+  _save() {
+    try { localStorage.setItem('fb_gacha', JSON.stringify({ pityL: this.pityL, pityE: this.pityE, history: this.history.slice(0, 20) })); } catch (_) {}
+  }
+  _owned(game, item) {
+    if (item.type === 'fruit') return game.ownedFruits.has(item.id);
+    if (item.type === 'sword') return game.ownedSwords.has(item.id);
+    return game.ownedStyles.has(item.id);
+  }
+  _grant(game, item) {
+    if (item.type === 'fruit') game.ownedFruits.add(item.id);
+    else if (item.type === 'sword') game.ownedSwords.add(item.id);
+    else game.ownedStyles.add(item.id);
+  }
+  _pick(game, rarity) {
+    let pool = GACHA_POOL.filter((p) => p.rarity === rarity);
+    if (!pool.length) pool = GACHA_POOL;
+    if (rarity === 'legendary' && this.featured && Math.random() < 0.5) {
+      const f = pool.find((p) => p.id === this.featured.id);
+      if (f) return f;
+    }
+    const fresh = pool.filter((p) => !this._owned(game, p));
+    const use = fresh.length ? fresh : pool;
+    return use[(Math.random() * use.length) | 0];
+  }
+  _rollOne(game) {
     this.pityL += 1;
     this.pityE += 1;
     let rarity;
@@ -76,7 +114,7 @@ export class Gacha {
     else if (this.pityE >= GACHA.epicPity) rarity = 'epic';
     else {
       let r = Math.random();
-      if (this.pityL >= GACHA.softPityStart) r -= (this.pityL - GACHA.softPityStart) * 0.012;
+      if (this.pityL >= GACHA.softPityStart) r -= (this.pityL - GACHA.softPityStart) * 0.018;
       const rates = GACHA.rates;
       if (r < rates.legendary) rarity = 'legendary';
       else if (r < rates.legendary + rates.epic) rarity = 'epic';
@@ -85,26 +123,49 @@ export class Gacha {
     }
     if (rarity === 'legendary') this.pityL = 0;
     if (rarity === 'epic' || rarity === 'legendary') this.pityE = 0;
-    let pool = GACHA_POOL.filter((p) => p.rarity === rarity);
-    if (!pool.length) pool = GACHA_POOL;
-    const pick = pool[(Math.random() * pool.length) | 0];
-    let dupe = false;
-    if (pick.type === 'fruit') {
-      if (game.ownedFruits.has(pick.id)) dupe = true;
-      else game.ownedFruits.add(pick.id);
-    } else if (pick.type === 'sword') {
-      if (game.ownedSwords.has(pick.id)) dupe = true;
-      else game.ownedSwords.add(pick.id);
-    } else {
-      if (game.ownedStyles.has(pick.id)) dupe = true;
-      else game.ownedStyles.add(pick.id);
+    const pick = this._pick(game, rarity);
+    const dupe = this._owned(game, pick);
+    let refund = 0;
+    if (dupe) {
+      refund = Math.floor(GACHA.cost * (GACHA.dupeRefund[rarity] || 0.4));
+      game.tokens += refund;
+    } else this._grant(game, pick);
+    const entry = { id: pick.id, name: pick.ref.name, emoji: pick.emoji, type: pick.type, rarity, dupe, refund };
+    this.history.unshift(entry);
+    if (this.history.length > 20) this.history.length = 20;
+    return { item: pick, rarity, dupe, refund };
+  }
+  roll(game, count = 1) {
+    count = count === 10 ? 10 : 1;
+    const cost = count === 10 ? GACHA.tenCost : GACHA.cost;
+    if (game.tokens < cost) return { ok: false, message: `Need ${cost.toLocaleString()} money to ${count === 10 ? 'do a 10-pull' : 'spin'}.`, pulls: [] };
+    game.tokens -= cost;
+    const pulls = [];
+    for (let i = 0; i < count; i++) pulls.push(this._rollOne(game));
+    if (count === 10 && !pulls.some((p) => p.rarity !== 'common')) {
+      const last = pulls[pulls.length - 1];
+      if (last.dupe) game.tokens -= last.refund;
+      const rare = this._pick(game, 'rare');
+      const dupe = this._owned(game, rare);
+      let refund = 0;
+      if (dupe) { refund = Math.floor(GACHA.cost * GACHA.dupeRefund.rare); game.tokens += refund; }
+      else this._grant(game, rare);
+      pulls[pulls.length - 1] = { item: rare, rarity: 'rare', dupe, refund };
+      this.history[0] = { id: rare.id, name: rare.ref.name, emoji: rare.emoji, type: rare.type, rarity: 'rare', dupe, refund };
     }
-    if (dupe) game.tokens += Math.floor(cost * 0.45);
-    const tag = rarity.toUpperCase();
-    const msg = dupe
-      ? `${tag} duplicate ${pick.ref.name} — refunded ${Math.floor(cost * 0.45)} money.`
-      : `${tag}! You pulled ${pick.emoji} ${pick.ref.name} (${pick.type}).`;
-    return { ok: true, item: pick, rarity, dupe, pityL: this.pityL, pityE: this.pityE, message: msg };
+    this._save();
+    const best = pulls.reduce((a, b) => {
+      const rank = { common: 0, rare: 1, epic: 2, legendary: 3 };
+      return rank[b.rarity] > rank[a.rarity] ? b : a;
+    }, pulls[0]);
+    const news = pulls.filter((p) => !p.dupe).length;
+    const dupes = pulls.length - news;
+    const msg = count === 1
+      ? (best.dupe
+        ? `${best.rarity.toUpperCase()} duplicate ${best.item.ref.name} — refunded ${best.refund.toLocaleString()} money.`
+        : `${best.rarity.toUpperCase()}! You pulled ${best.item.emoji} ${best.item.ref.name}.`)
+      : `10-pull: ${news} new · ${dupes} dupes · best ${best.rarity.toUpperCase()} ${best.item.ref.name}.`;
+    return { ok: true, pulls, item: best.item, rarity: best.rarity, dupe: best.dupe, pityL: this.pityL, pityE: this.pityE, message: msg };
   }
 }
 

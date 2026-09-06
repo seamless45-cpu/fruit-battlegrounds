@@ -69,11 +69,30 @@ export class FX {
     }, 14);
 
     this.orbs = new Pool(() => {
-      const m = new THREE.Mesh(GEO.sphere, new THREE.MeshBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
+      const m = new THREE.Mesh(GEO.sphere, new THREE.MeshStandardMaterial({
+        color: 0xffffff, roughness: 0.35, metalness: 0.2, emissive: 0x111111, emissiveIntensity: 0.4,
       }));
       m.visible = false; scene.add(m); return m;
     }, 12);
+
+    this.lines = new Pool(() => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(18 * 3), 3));
+      geo.setDrawRange(0, 18);
+      const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: true });
+      const line = new THREE.Line(geo, mat);
+      line.visible = false;
+      line.frustumCulled = false;
+      scene.add(line);
+      return line;
+    }, 36);
+
+    this.waves = new Pool(() => {
+      const m = new THREE.Mesh(GEO.box, new THREE.MeshStandardMaterial({
+        color: 0x3aa0d8, roughness: 0.45, metalness: 0.2, transparent: true, opacity: 0.82,
+      }));
+      m.visible = false; scene.add(m); return m;
+    }, 6);
 
     this.nums = [];
     for (let i = 0; i < 28; i++) {
@@ -159,54 +178,130 @@ export class FX {
   }
 
   explosion(opts = {}) {
-    const { x = 0, z = 0, radius = 8, color = 0xff7a2a, life = 0.55, debris = 8, intensity = 1 } = opts;
-    this._flash(this.glow, x, 1.1, z, color, Math.max(2, radius * 0.55), life, 1.6 * intensity);
-    this._flash(this.rings, x, 0.2, z, color, Math.max(2, radius * 0.35), life * 1.1, 2.4);
-    if (debris > 0 && this.particles) this.debris(x, z, Math.min(debris, 10), color, radius * 0.45);
+    const { x = 0, z = 0, radius = 8, color = 0xff7a2a, life = 0.55, debris = 8 } = opts;
+    this._flash(this.rings, x, 0.12, z, color, Math.max(1.6, radius * 0.22), life * 1.15, 3.4);
+    if (debris > 0 && this.particles) {
+      this.debris(x, z, Math.min(debris, 12), color, radius * 0.55);
+      this._chunks(x, z, Math.min(4, 1 + (debris / 4) | 0), color, radius * 0.35);
+    }
   }
 
   debris(x, z, count, color = 0xffa040, spread = 6) {
-    const n = Math.min(count, 8);
+    const n = Math.min(count, 10);
     for (let i = 0; i < n; i++) {
       const s = this.sparks.take();
       if (!s) return;
-      s.position.set(x, 1.2, z);
+      s.position.set(x, 0.4 + Math.random() * 0.6, z);
       s.material.color.setHex(color);
       s.material.opacity = 1;
-      s.scale.setScalar(0.7 + Math.random() * 0.8);
-      const vel = new THREE.Vector3((Math.random() * 2 - 1) * spread, 8 + Math.random() * 7, (Math.random() * 2 - 1) * spread);
-      let t = 0; const life = 0.7 + Math.random() * 0.4;
+      s.scale.setScalar(0.45 + Math.random() * 0.55);
+      const vel = new THREE.Vector3((Math.random() * 2 - 1) * spread, 6 + Math.random() * 10, (Math.random() * 2 - 1) * spread);
+      let t = 0; const life = 0.55 + Math.random() * 0.5;
       this.add({
         update: (dt) => {
-          t += dt; vel.y -= 28 * dt;
+          t += dt;
+          vel.y -= 38 * dt;
+          vel.x *= (1 - 1.2 * dt);
+          vel.z *= (1 - 1.2 * dt);
           s.position.addScaledVector(vel, dt);
-          s.material.opacity = 1 - t / life;
-          return t < life && s.position.y > 0;
+          if (s.position.y < 0.08 && vel.y < 0) {
+            s.position.y = 0.08;
+            vel.y *= -0.38;
+            vel.x *= 0.55;
+            vel.z *= 0.55;
+            if (Math.abs(vel.y) < 1.4) vel.y = 0;
+          }
+          s.material.opacity = Math.max(0, 1 - t / life);
+          return t < life;
         },
         dispose: () => this.sparks.give(s),
       });
     }
   }
 
-  bolt(opts = {}) {
-    const { x = 0, z = 0, height = 30, color = 0x9b30ff, life = 0.32 } = opts;
-    const s = this.bolts.take();
-    if (!s) return;
-    s.position.set(x, height * 0.5, z);
-    s.material.color.setHex(color);
-    s.material.opacity = 1;
-    s.scale.set(3.2, height, 1);
-    let t = 0;
+  _chunks(x, z, count, color, spread = 5) {
+    for (let i = 0; i < count; i++) {
+      const m = this.rocks.take();
+      if (!m) return;
+      m.material.color.setHex(color);
+      m.scale.setScalar(0.35 + Math.random() * 0.55);
+      m.position.set(x, 0.4, z);
+      const vel = new THREE.Vector3((Math.random() * 2 - 1) * spread, 7 + Math.random() * 8, (Math.random() * 2 - 1) * spread);
+      const spin = new THREE.Vector3(Math.random() * 8, Math.random() * 8, Math.random() * 8);
+      let t = 0;
+      this.add({
+        update: (dt) => {
+          t += dt;
+          vel.y -= 42 * dt;
+          m.position.addScaledVector(vel, dt);
+          m.rotation.x += spin.x * dt;
+          m.rotation.z += spin.z * dt;
+          if (m.position.y < 0.12 && vel.y < 0) {
+            m.position.y = 0.12;
+            vel.y *= -0.32;
+            vel.x *= 0.5;
+            vel.z *= 0.5;
+            if (Math.abs(vel.y) < 2) return false;
+          }
+          return t < 1.4;
+        },
+        dispose: () => this.rocks.give(m),
+      });
+    }
+  }
+
+  _jaggedLine(line, ax, ay, az, bx, by, bz, jag = 2.4) {
+    const pos = line.geometry.attributes.position;
+    const n = pos.count;
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    let px = -dz, pz = dx;
+    const plen = Math.hypot(px, pz) || 1;
+    px /= plen; pz /= plen;
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const fall = Math.sin(t * Math.PI);
+      const j = (Math.random() * 2 - 1) * jag * fall;
+      const k = (Math.random() * 2 - 1) * jag * 0.45 * fall;
+      pos.setXYZ(i, ax + dx * t + px * j, ay + dy * t + k, az + dz * t + pz * j);
+    }
+    pos.needsUpdate = true;
+    line.geometry.computeBoundingSphere();
+  }
+
+  _spawnBoltLine(ax, ay, az, bx, by, bz, color, life, jag) {
+    const line = this.lines.take();
+    if (!line) return;
+    line.material.color.setHex(color);
+    line.material.opacity = 1;
+    this._jaggedLine(line, ax, ay, az, bx, by, bz, jag);
+    let t = 0, flicker = 0;
     this.add({
       update: (dt) => {
-        t += dt;
-        s.material.opacity = (1 - t / life) * (0.65 + Math.random() * 0.35);
-        s.scale.x = 2.4 + Math.random() * 1.6;
+        t += dt; flicker += dt;
+        if (flicker > 0.04) {
+          flicker = 0;
+          this._jaggedLine(line, ax, ay, az, bx, by, bz, jag);
+        }
+        line.material.opacity = Math.max(0, 1 - t / life);
         return t < life;
       },
-      dispose: () => this.bolts.give(s),
+      dispose: () => this.lines.give(line),
     });
-    this._flash(this.glow, x, 1.4, z, color, 3.5, life, 0.4);
+  }
+
+  bolt(opts = {}) {
+    const { x = 0, z = 0, height = 30, color = 0x9b30ff, life = 0.28, branches = 2 } = opts;
+    const ox = (Math.random() * 2 - 1) * 1.2;
+    const oz = (Math.random() * 2 - 1) * 1.2;
+    this._spawnBoltLine(x + ox, height, z + oz, x, 0.05, z, color, life, Math.max(1.6, height * 0.07));
+    const n = Math.min(4, branches | 0);
+    for (let i = 0; i < n; i++) {
+      const midY = height * (0.25 + Math.random() * 0.5);
+      const bx = x + (Math.random() * 2 - 1) * 5;
+      const bz = z + (Math.random() * 2 - 1) * 5;
+      this._spawnBoltLine(x, midY, z, bx, 0.05, bz, color, life * 0.75, 2.2);
+    }
+    if (this.particles) this.debris(x, z, 4, color, 3.5);
   }
 
   boltLine(x, z, height, color, life = 0.18) {
@@ -215,8 +310,8 @@ export class FX {
 
   shockwave(opts = {}) {
     const { x = 0, z = 0, radius = 14, color = 0xbfe9ff, duration = 0.8, debrisCount = 8 } = opts;
-    this._flash(this.rings, x, 0.18, z, color, radius * 0.25, duration, 3.2);
-    if (debrisCount > 0 && this.particles) this.debris(x, z, Math.min(debrisCount, 8), color, radius * 0.3);
+    this._flash(this.rings, x, 0.1, z, color, radius * 0.18, duration, 4.2);
+    if (debrisCount > 0 && this.particles) this.debris(x, z, Math.min(debrisCount, 8), color, radius * 0.28);
   }
 
   firepit(opts = {}, onTick) {
@@ -224,16 +319,37 @@ export class FX {
     const tick = onTick || opts.onTick;
     const s = this.fires.take();
     if (!s) return;
-    s.position.set(x, 1.1, z);
+    s.position.set(x, 0.7, z);
     s.material.color.setHex(color);
-    s.scale.setScalar(radius * 0.7);
-    let t = 0, acc = 0;
+    s.scale.setScalar(radius * 0.55);
+    let t = 0, acc = 0, ember = 0;
     this.add({
       update: (dt) => {
-        t += dt; acc += dt;
+        t += dt; acc += dt; ember += dt;
         const k = t / duration;
-        s.material.opacity = 0.75 * (1 - k * 0.4) * (0.7 + Math.random() * 0.3);
-        s.scale.setScalar(radius * (0.55 + Math.random() * 0.2));
+        s.material.opacity = 0.8 * (1 - k * 0.45) * (0.75 + Math.random() * 0.25);
+        s.position.y = 0.55 + Math.sin(t * 9) * 0.12;
+        s.scale.setScalar(radius * (0.5 + Math.sin(t * 6) * 0.08));
+        if (ember > 0.12 && this.particles) {
+          ember = 0;
+          const sp = this.sparks.take();
+          if (sp) {
+            sp.position.set(x + (Math.random() * 2 - 1) * radius * 0.4, 0.6, z + (Math.random() * 2 - 1) * radius * 0.4);
+            sp.material.color.setHex(color);
+            sp.scale.setScalar(0.4);
+            const vel = new THREE.Vector3((Math.random() - 0.5) * 2, 4 + Math.random() * 5, (Math.random() - 0.5) * 2);
+            let et = 0;
+            this.add({
+              update: (dd) => {
+                et += dd; vel.y -= 6 * dd;
+                sp.position.addScaledVector(vel, dd);
+                sp.material.opacity = 1 - et / 0.55;
+                return et < 0.55;
+              },
+              dispose: () => this.sparks.give(sp),
+            });
+          }
+        }
         if (acc >= 0.5) { acc -= 0.5; if (tick) tick(x, z, radius, dps * 0.5); }
         return t < duration;
       },
@@ -245,28 +361,47 @@ export class FX {
     const hit = onImpact || opts.onImpact;
     const { x = 0, z = 0, radius = 25, color = 0x6b4a8a, fallFrom = 70, fallTime = 1.0, explosionColor = 0x9b30ff } = opts;
     const rock = this.rocks.take();
-    const glow = this.glow.take();
+    const ox = (Math.random() * 2 - 1) * 28, oz = (Math.random() * 2 - 1) * 28;
     if (rock) {
       rock.material.color.setHex(color);
       rock.scale.setScalar(2.4 + radius * 0.08);
-      rock.position.set(x, fallFrom, z);
+      rock.position.set(x + ox, fallFrom, z + oz);
     }
-    if (glow) { glow.position.set(x, fallFrom, z); glow.material.color.setHex(explosionColor); glow.scale.setScalar(6); }
+    const vel = new THREE.Vector3(-ox / fallTime, 0, -oz / fallTime);
+    vel.y = -(fallFrom + 4) / fallTime;
     let t = 0;
     this.add({
       update: (dt) => {
-        t += dt; const k = Math.min(1, t / fallTime); const y = fallFrom * (1 - k * k);
-        if (rock) { rock.position.y = y; rock.rotation.x += dt * 2; rock.rotation.z += dt * 1.4; }
-        if (glow) { glow.position.y = y; glow.material.opacity = 0.7; }
-        if (k >= 1) {
-          this.explosion({ x, z, radius, color: explosionColor, life: 0.7, debris: 10, intensity: 1.3 });
+        t += dt;
+        if (rock) {
+          vel.y -= 38 * dt;
+          rock.position.addScaledVector(vel, dt);
+          rock.rotation.x += dt * 2.4;
+          rock.rotation.z += dt * 1.6;
+          if (this.particles && Math.random() < 0.4) {
+            const sp = this.sparks.take();
+            if (sp) {
+              sp.position.copy(rock.position);
+              sp.material.color.setHex(explosionColor);
+              sp.scale.setScalar(0.7);
+              let st = 0;
+              this.add({
+                update: (dd) => { st += dd; sp.material.opacity = 1 - st / 0.25; sp.position.y -= dd * 4; return st < 0.25; },
+                dispose: () => this.sparks.give(sp),
+              });
+            }
+          }
+        }
+        const y = rock ? rock.position.y : 0;
+        if (t >= fallTime || y <= 0.2) {
+          this.explosion({ x, z, radius, color: explosionColor, life: 0.7, debris: 12 });
           this.shake(0.7, Math.min(4, radius * 0.05));
           if (hit) hit(x, z, radius);
           return false;
         }
         return true;
       },
-      dispose: () => { this.rocks.give(rock); this.glow.give(glow); },
+      dispose: () => this.rocks.give(rock),
     });
   }
 
@@ -274,14 +409,21 @@ export class FX {
     const hit = onImpact || opts.onImpact;
     const { x = 0, z = 0, radius = 5, color = 0x7a5a9a, fallFrom = 46, fallTime = 0.5, explosionColor = 0x9b30ff } = opts;
     const rock = this.rocks.take();
-    if (rock) { rock.material.color.setHex(color); rock.scale.setScalar(1.5); rock.position.set(x, fallFrom, z); }
+    const ox = (Math.random() * 2 - 1) * 18, oz = (Math.random() * 2 - 1) * 18;
+    if (rock) { rock.material.color.setHex(color); rock.scale.setScalar(1.5); rock.position.set(x + ox, fallFrom, z + oz); }
+    const vel = new THREE.Vector3(-ox / fallTime, -(fallFrom + 2) / fallTime, -oz / fallTime);
     let t = 0;
     this.add({
       update: (dt) => {
-        t += dt; const k = Math.min(1, t / fallTime);
-        if (rock) rock.position.y = fallFrom * (1 - k * k);
-        if (k >= 1) {
-          this.explosion({ x, z, radius, color: explosionColor, life: 0.45, debris: 4, intensity: 1 });
+        t += dt;
+        if (rock) {
+          vel.y -= 46 * dt;
+          rock.position.addScaledVector(vel, dt);
+          rock.rotation.x += dt * 4;
+          rock.rotation.z += dt * 3;
+        }
+        if (t >= fallTime || (rock && rock.position.y <= 0.2)) {
+          this.explosion({ x, z, radius, color: explosionColor, life: 0.45, debris: 6 });
           if (hit) hit(x, z, radius);
           return false;
         }
@@ -294,26 +436,27 @@ export class FX {
   tsunami(opts = {}, onPass) {
     const hit = onPass || opts.onPass;
     const { x = 0, z = 0, dir = new THREE.Vector3(1, 0, 0), distance = 120, speed = 40, height = 10, width = 30, color = 0x3aa0ff } = opts;
-    const pool = this.waters.free.length ? this.waters : this.glow;
-    const s = pool.take();
+    const s = this.waves.take();
     if (!s) return;
     const d = dir.clone();
     if (d.lengthSq() < 0.0001) d.set(1, 0, 0);
     d.normalize();
-    const start = new THREE.Vector3(x, height * 0.35, z).addScaledVector(d, -distance / 2);
-    s.position.copy(start);
+    const start = new THREE.Vector3(x, height * 0.45, z).addScaledVector(d, -distance / 2);
     s.material.color.setHex(color);
-    s.scale.set(width * 0.28, height * 0.22, 1);
+    s.scale.set(width * 0.9, height * 0.7, 4.5);
+    s.rotation.y = Math.atan2(d.x, d.z);
     let traveled = 0;
     this.add({
       update: (dt) => {
         traveled += speed * dt;
+        const bob = Math.sin(traveled * 0.12) * height * 0.12;
         s.position.copy(start).addScaledVector(d, traveled);
-        s.material.opacity = 0.75;
+        s.position.y = height * 0.35 + bob;
+        s.material.opacity = 0.78;
         if (hit) hit(s.position.x, s.position.z, 4);
         return traveled < distance;
       },
-      dispose: () => pool.give(s),
+      dispose: () => this.waves.give(s),
     });
   }
 
@@ -382,7 +525,8 @@ export class FX {
     const s = this.slashes.take();
     if (!s) return;
     const push = Math.min(3.2, reach * 0.32);
-    s.position.set(x + Math.sin(facing) * push, y, z + Math.cos(facing) * push);
+    const fx = Math.sin(facing), fz = Math.cos(facing);
+    s.position.set(x + fx * push, y, z + fz * push);
     s.material.color.setHex(color);
     s.material.rotation = -facing;
     s.material.opacity = 0.95;
@@ -398,23 +542,44 @@ export class FX {
       },
       dispose: () => this.slashes.give(s),
     });
+    if (this.particles) {
+      for (let i = 0; i < 3; i++) {
+        const sp = this.sparks.take();
+        if (!sp) break;
+        sp.position.set(x + fx * (2 + i), y, z + fz * (2 + i));
+        sp.material.color.setHex(color);
+        sp.scale.setScalar(0.45);
+        const vel = new THREE.Vector3(fx * 8 + (Math.random() - 0.5) * 4, 3 + Math.random() * 4, fz * 8 + (Math.random() - 0.5) * 4);
+        let st = 0;
+        this.add({
+          update: (dt) => {
+            st += dt; vel.y -= 22 * dt;
+            sp.position.addScaledVector(vel, dt);
+            sp.material.opacity = 1 - st / 0.28;
+            return st < 0.28;
+          },
+          dispose: () => this.sparks.give(sp),
+        });
+      }
+    }
   }
 
   launchOrb(from, dir, opts = {}) {
     const {
       speed = 40, range = 110, color = 0xffffff, radius = 1.3, hitRadius = 2.4, enemies, onExplode,
-      gravity = 0, arc = 0, homing = 0,
+      gravity = 22, arc = 8, homing = 0, bounce = 1,
     } = opts;
     const m = this.orbs.take();
     if (!m) { if (onExplode) onExplode(from, false); return; }
     m.material.color.setHex(color);
+    if (m.material.emissive) m.material.emissive.setHex(color);
     m.position.copy(from); m.position.y = (from.y || 0) + 1.5;
     m.scale.setScalar(radius * 2);
     const vel = dir.clone();
     if (vel.lengthSq() < 0.0001) vel.set(0, 0, 1);
     vel.normalize().multiplyScalar(speed);
     vel.y += arc;
-    let traveled = 0;
+    let traveled = 0, bounces = 0, trail = 0;
     this.add({
       update: (dt) => {
         if (homing && enemies) {
@@ -432,16 +597,47 @@ export class FX {
             }
           }
         }
-        if (gravity) vel.y -= gravity * dt;
+        vel.y -= gravity * dt;
+        vel.x *= (1 - 0.35 * dt);
+        vel.z *= (1 - 0.35 * dt);
         const step = vel.length() * dt;
         traveled += step;
         m.position.addScaledVector(vel, dt);
+        m.rotation.x += dt * 6;
         m.rotation.y += dt * 8;
+        trail += dt;
+        if (trail > 0.04 && this.particles) {
+          trail = 0;
+          const sp = this.sparks.take();
+          if (sp) {
+            sp.position.copy(m.position);
+            sp.material.color.setHex(color);
+            sp.scale.setScalar(radius * 0.7);
+            let st = 0;
+            this.add({
+              update: (dd) => { st += dd; sp.material.opacity = 1 - st / 0.22; return st < 0.22; },
+              dispose: () => this.sparks.give(sp),
+            });
+          }
+        }
         let struck = false;
         if (enemies) struck = enemies.alive().some((e) => e.position.distanceTo(m.position) < hitRadius);
-        if (struck || traveled >= range || m.position.y < 0.15) {
-          if (m.position.y < 0.15) m.position.y = 0.15;
-          this.explosion({ x: m.position.x, z: m.position.z, radius: 6, color, life: 0.4, debris: 3 });
+        if (m.position.y < 0.18 && vel.y < 0) {
+          if (bounces < bounce) {
+            bounces += 1;
+            m.position.y = 0.18;
+            vel.y *= -0.45;
+            vel.x *= 0.7;
+            vel.z *= 0.7;
+          } else {
+            m.position.y = 0.18;
+            this.explosion({ x: m.position.x, z: m.position.z, radius: 6, color, life: 0.4, debris: 5 });
+            if (onExplode) onExplode(m.position, struck);
+            return false;
+          }
+        }
+        if (struck || traveled >= range) {
+          this.explosion({ x: m.position.x, z: m.position.z, radius: 6, color, life: 0.4, debris: 5 });
           if (onExplode) onExplode(m.position, struck);
           return false;
         }
@@ -488,8 +684,30 @@ export class FX {
   }
 
   frost(x, z, radius = 10, color = 0x9fe9ff) {
-    this._flash(this.ices, x, 1.4, z, color, radius * 0.5, 0.55, 1.4);
-    this.shockwave({ x, z, radius, color, duration: 0.55, debrisCount: 4 });
+    this._flash(this.ices, x, 1.1, z, color, radius * 0.42, 0.5, 1.1);
+    this.shockwave({ x, z, radius, color, duration: 0.55, debrisCount: 3 });
+    if (!this.particles) return;
+    for (let i = 0; i < 6; i++) {
+      const s = this.ices.take();
+      if (!s) break;
+      const a = (i / 6) * Math.PI * 2;
+      s.position.set(x + Math.cos(a) * radius * 0.35, 2.4 + Math.random(), z + Math.sin(a) * radius * 0.35);
+      s.material.color.setHex(color);
+      s.scale.setScalar(1.2);
+      const vel = new THREE.Vector3((Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3);
+      let t = 0;
+      this.add({
+        update: (dt) => {
+          t += dt; vel.y -= 28 * dt;
+          s.position.addScaledVector(vel, dt);
+          s.rotation.z += dt * 4;
+          if (s.position.y < 0.1) { s.position.y = 0.1; vel.y = 0; }
+          s.material.opacity = 1 - t / 0.7;
+          return t < 0.7;
+        },
+        dispose: () => this.ices.give(s),
+      });
+    }
   }
 }
 

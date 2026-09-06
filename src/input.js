@@ -93,7 +93,7 @@ export class Input {
       if (len > max) { dx = dx / len * max; dy = dy / len * max; }
       knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
       this.joy.x = dx / max;
-      this.joy.z = dy / max;
+      this.joy.z = -dy / max;
     };
     const reset = () => {
       this.joyActive = false;

@@ -499,10 +499,12 @@ export const MELEE = {
 
 export const GACHA = {
   cost: 800,
+  tenCost: 7200,
   legendaryPity: 75,
   epicPity: 12,
   softPityStart: 50,
-  rates: { common: 0.60, rare: 0.25, epic: 0.12, legendary: 0.03 },
+  rates: { common: 0.55, rare: 0.27, epic: 0.13, legendary: 0.05 },
+  dupeRefund: { common: 0.35, rare: 0.5, epic: 0.7, legendary: 0.92 },
 };
 
 const FALLBACK_RARITY = {

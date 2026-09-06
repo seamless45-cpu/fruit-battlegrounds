@@ -191,9 +191,9 @@ game.startPlay = () => {
   ui.toast('WASD or joystick • drag to look • tap to attack • E talk to quests', 4800);
 };
 
-game.spinGacha = () => {
+game.spinGacha = (count = 1) => {
   sfx.unlock();
-  const result = gacha.roll(game);
+  const result = gacha.roll(game, count);
   ui.setTokens(game.tokens);
   ui.refreshInventory();
   if (ui.renderBoatShop) ui.renderBoatShop();
@@ -201,9 +201,10 @@ game.spinGacha = () => {
   if (result.ok) {
     if (result.rarity === 'legendary') sfx.legendary();
     else sfx.gacha();
-    if (!result.dupe && result.item && result.item.type === 'fruit') game.noteQuest('fruits');
+    const newFruits = (result.pulls || []).filter((p) => !p.dupe && p.item.type === 'fruit');
+    if (newFruits.length) game.noteQuest('fruits', newFruits.length);
   }
-  ui.toast(result.message);
+  ui.toast(result.message, result.ok && count === 10 ? 3600 : 2200);
   return result;
 };
 
