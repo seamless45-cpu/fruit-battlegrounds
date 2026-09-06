@@ -27,7 +27,45 @@ function randomArena() {
 }
 function blast(game, x, z, r, dmgPct, color, extra = {}) {
   game.fx.explosion({ x, z, radius: r, color, life: 0.5, debris: 5, intensity: 1.1 });
-  return game.enemies.applyArea(V(x, z), r, DMG(dmgPct), extra);
+  let hits = 0;
+  const center = V(x, z);
+  game.enemies.alive().forEach((e) => {
+    const d = e.position.distanceTo(center);
+    if (d > r) return;
+    hits++;
+    const fall = 1 - (d / Math.max(0.01, r)) * 0.42;
+    const knock = extra.knockDir ? extra.knockDir : e.position.clone().sub(center).setY(0);
+    if (knock.lengthSq() > 0.0001) knock.normalize();
+    game.enemies.damage(e, DMG(dmgPct * fall), {
+      ...extra,
+      knockDir: extra.knockDir || knock,
+      knockForce: (extra.knockForce || 10) * fall,
+    });
+  });
+  if (hits && game.sfx) game.sfx.play(hits > 3 ? 'explosion' : 'impact');
+  return hits;
+}
+function lunge(game, dir, dist = 6) {
+  const d = dir.clone(); d.y = 0;
+  if (d.lengthSq() < 0.0001) d.set(Math.sin(game.player.facing), 0, Math.cos(game.player.facing));
+  d.normalize();
+  game.player.lunge.copy(d).multiplyScalar(dist * 9);
+  if (game.player.playSkill) game.player.playSkill();
+}
+function coneHit(game, dir, reach, width, pct, extra = {}) {
+  const fwd = dir.clone(); fwd.y = 0; if (fwd.lengthSq() < 0.0001) return 0; fwd.normalize();
+  let n = 0;
+  game.enemies.alive().forEach((e) => {
+    const to = e.position.clone().sub(game.player.position); to.y = 0;
+    const d = to.length();
+    if (d > reach + 1) return;
+    if (to.normalize().dot(fwd) < 0.45) return;
+    const side = Math.abs(to.x * fwd.z - to.z * fwd.x) * d;
+    if (side > width) return;
+    n++;
+    game.enemies.damage(e, DMG(pct), { ...extra, knockDir: fwd, knockForce: extra.knockForce || 12 });
+  });
+  return n;
 }
 function aimDir(player, aim) {
   const dir = aim.clone().sub(player.position); dir.y = 0;
@@ -661,6 +699,397 @@ const handlers = {
     enemies.applyArea(player.position, 22, DMG(0.55), { blind: true, blindDur: 3, burn: true, burnDps: DMG(0.06), burnDur: 6 });
     fx.shake(0.85, 2.8);
   },
+
+  st_cut(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 3);
+    game.fx.slashFx(game.player.position.x, 1.8, game.player.position.z, 0x8ec8ff, game.player.facing, 8);
+    coneHit(game, dir, 12, 4, 0.32, { knockForce: 16 });
+    if (game.sfx) game.sfx.whoosh();
+  },
+  st_burst(game) {
+    blast(game, game.player.position.x, game.player.position.z, 10, 0.35, 0x8ec8ff, { knockForce: 22 });
+    game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 12, color: 0xcfe8ff, duration: 0.7, debrisCount: 6 });
+  },
+  st_spin(game) {
+    let t = 0;
+    game.fx.add({
+      update: (dt) => {
+        t += dt; game.enemies.pullTo(game.player.position, 80, { lift: true, liftDur: 0.4 });
+        if (t % 0.18 < dt) game.enemies.applyArea(game.player.position, 9, DMG(0.1), {});
+        return t < 1.5;
+      }, dispose() {},
+    });
+    if (game.sfx) game.sfx.whoosh();
+  },
+  st_bolt(game, aim) {
+    game.fx.meteor({ x: aim.x, z: aim.z, radius: 9, color: 0x8ec8ff, explosionColor: 0xb8e0ff, fallTime: 0.55,
+      onImpact: (x, z, r) => blast(game, x, z, r, 0.5, 0x8ec8ff, { knockForce: 14 }) });
+  },
+
+  sh_lash(game, aim) {
+    game.fx.launchOrb(game.player.position.clone(), aimDir(game.player, aim), {
+      speed: 42, range: 80, color: 0x5b3aa0, radius: 0.7, enemies: game.enemies, homing: 6,
+      onExplode: (p) => blast(game, p.x, p.z, 4, 0.34, 0x5b3aa0, {}),
+    });
+  },
+  sh_step(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 14);
+    coneHit(game, dir, 16, 3, 0.4, { knockForce: 8 });
+    if (game.sfx) game.sfx.whoosh();
+  },
+  sh_bind(game) {
+    game.enemies.applyArea(game.player.position, 14, DMG(0.28), { stun: true, stunDur: 2.2 });
+    game.fx.frost(game.player.position.x, game.player.position.z, 14, 0x5b3aa0);
+  },
+  sh_nova(game) {
+    let t = 0;
+    game.fx.add({
+      update: (dt) => { t += dt; game.enemies.pullTo(game.player.position, 110, { lift: true, liftDur: 0.3 }); return t < 0.55; },
+      dispose() {},
+    });
+    game.after(0.55, () => blast(game, game.player.position.x, game.player.position.z, 14, 0.62, 0x5b3aa0, { stun: true, stunDur: 1.2 }));
+  },
+
+  vn_spit(game, aim) {
+    game.fx.launchOrb(game.player.position.clone(), aimDir(game.player, aim), {
+      speed: 36, range: 70, color: 0x7dff6a, radius: 0.9, gravity: 28, arc: 10, enemies: game.enemies,
+      onExplode: (p) => blast(game, p.x, p.z, 5, 0.3, 0x7dff6a, { burn: true, burnDps: DMG(0.07), burnDur: 5 }),
+    });
+  },
+  vn_cloud(game, aim) {
+    game.fx.firepit({ x: aim.x, z: aim.z, radius: 8, duration: 7, dps: DMG(0.07), color: 0x7dff6a },
+      (px, pz, pr, d) => game.enemies.applyArea(V(px, pz), pr, d, { burn: true, burnDps: DMG(0.04), burnDur: 3 }));
+  },
+  vn_fang(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 8);
+    coneHit(game, dir, 8, 3, 0.4, { burn: true, burnDps: DMG(0.08), burnDur: 4, knockForce: 10 });
+  },
+  vn_bloom(game) { blast(game, game.player.position.x, game.player.position.z, 16, 0.55, 0x7dff6a, { burn: true, burnDps: DMG(0.09), burnDur: 6 }); },
+
+  sd_blade(game, aim) {
+    const dir = aimDir(game.player, aim);
+    game.fx.slashFx(game.player.position.x, 1.7, game.player.position.z, 0xe8c07a, game.player.facing, 8);
+    coneHit(game, dir, 11, 3.5, 0.3, { knockForce: 12 });
+  },
+  sd_bury(game) {
+    game.enemies.applyArea(game.player.position, 12, DMG(0.38), { stun: true, stunDur: 2, lift: false });
+    game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 12, color: 0xe8c07a, duration: 0.7, debrisCount: 8 });
+  },
+  sd_storm(game) {
+    game.shade(0xe8c07a, 0.4, true);
+    blast(game, game.player.position.x, game.player.position.z, 16, 0.32, 0xe8c07a, { blind: true, blindDur: 3 });
+  },
+  sd_tomb(game, aim) {
+    game.fx.rockRise({ x: aim.x, z: aim.z, radius: 9, rise: 0.7, color: 0xc4a574,
+      onSlam: (x, z) => blast(game, x, z, 12, 0.6, 0xe8c07a, { stun: true, stunDur: 1.6 }) });
+  },
+
+  sg_bind(game) {
+    game.enemies.pullTo(game.player.position, 140);
+    game.enemies.applyArea(game.player.position, 16, DMG(0.18), { stun: true, stunDur: 1.2 });
+  },
+  sg_snip(game, aim) {
+    const dir = aimDir(game.player, aim);
+    coneHit(game, dir, 14, 2.2, 0.38, { knockForce: 8 });
+    game.fx.slashFx(game.player.position.x, 1.8, game.player.position.z, 0xf2d6ea, game.player.facing, 10);
+  },
+  sg_pup(game) {
+    let t = 0;
+    game.fx.add({
+      update: (dt) => { t += dt; game.enemies.pullTo(game.player.position, 90, { lift: true, liftDur: 0.6 }); return t < 0.7; },
+      dispose() {},
+    });
+    game.after(0.7, () => blast(game, game.player.position.x, game.player.position.z, 12, 0.5, 0xf2d6ea, { knockForce: 18 }));
+  },
+  sg_cage(game) {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const x = game.player.position.x + Math.cos(a) * 7, z = game.player.position.z + Math.sin(a) * 7;
+      game.fx.slashFx(x, 1.6, z, 0xf2d6ea, a, 4);
+    }
+    blast(game, game.player.position.x, game.player.position.z, 9, 0.48, 0xf2d6ea, { stun: true, stunDur: 1 });
+  },
+
+  rb_pistol(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 10);
+    coneHit(game, dir, 12, 3, 0.42, { knockForce: 18 });
+    if (game.sfx) game.sfx.punch();
+  },
+  rb_gat(game) {
+    for (let i = 0; i < 8; i++) game.after(i * 0.06, () => {
+      game.fx.slashFx(game.player.position.x, 1.7, game.player.position.z, 0xff8aa8, game.player.facing + i * 0.4, 6);
+      game.enemies.applyArea(game.player.position, 7, DMG(0.1), {});
+    });
+  },
+  rb_bounce(game) {
+    game.player.vy = 18;
+    game.after(0.45, () => blast(game, game.player.position.x, game.player.position.z, 10, 0.48, 0xff8aa8, { knockForce: 16 }));
+  },
+  rb_whip(game, aim) {
+    const dir = aimDir(game.player, aim);
+    coneHit(game, dir, 18, 3.2, 0.4, { knockForce: 14 });
+    game.fx.slashFx(game.player.position.x, 1.8, game.player.position.z, 0xff8aa8, game.player.facing, 14);
+  },
+
+  so_drain(game) {
+    const hits = game.enemies.getNearby(game.player.position, 12);
+    hits.forEach((e) => game.enemies.damage(e, DMG(0.22), {}));
+    if (hits.length) game.enemies.healPlayer(DMG(0.08 * Math.min(4, hits.length)));
+    game.fx.pillar({ x: game.player.position.x, z: game.player.position.z, height: 18, color: 0xc9b6ff, duration: 0.8, rings: 3 });
+  },
+  so_scream(game) {
+    blast(game, game.player.position.x, game.player.position.z, 14, 0.36, 0xc9b6ff, { stun: true, stunDur: 2, knockForce: 8 });
+    if (game.sfx) game.sfx.thunder();
+  },
+  so_chain(game) {
+    let t = 0;
+    game.fx.add({
+      update: (dt) => { t += dt; game.enemies.pullTo(game.player.position, 130); return t < 0.8; }, dispose() {},
+    });
+    game.after(0.8, () => blast(game, game.player.position.x, game.player.position.z, 10, 0.4, 0xc9b6ff, {}));
+  },
+  so_burst(game) {
+    blast(game, game.player.position.x, game.player.position.z, 20, 0.7, 0xc9b6ff, { stun: true, stunDur: 1.5, knockForce: 20 });
+    game.fx.shake(0.9, 3);
+  },
+
+  dr_breath(game, aim) {
+    const dir = aimDir(game.player, aim);
+    coneHit(game, dir, 16, 6, 0.4, { burn: true, burnDps: DMG(0.08), burnDur: 4, knockForce: 10 });
+    for (let i = 1; i <= 5; i++) game.fx._flash(game.fx.fires, game.player.position.x + dir.x * i * 3, 1.4, game.player.position.z + dir.z * i * 3, 0x3ecf7a, 3, 0.25, 0.6);
+    if (game.sfx) game.sfx.fire();
+  },
+  dr_dash(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 16);
+    coneHit(game, dir, 18, 3.4, 0.45, { burn: true, burnDps: DMG(0.06), burnDur: 3, knockForce: 14 });
+  },
+  dr_roar(game) {
+    blast(game, game.player.position.x, game.player.position.z, 16, 0.4, 0x3ecf7a, { stun: true, stunDur: 1.8, knockForce: 16 });
+    if (game.sfx) game.sfx.thunder();
+  },
+  dr_sky(game) {
+    for (let i = 0; i < 7; i++) game.after(i * 0.14, () => {
+      const rp = randomArena();
+      game.fx.meteor({ x: rp.x, z: rp.z, radius: 7, color: 0x1a6a3a, explosionColor: 0x3ecf7a, fallTime: 0.5,
+        onImpact: (x, z, r) => game.enemies.applyArea(V(x, z), r, DMG(0.28), { burn: true, burnDps: DMG(0.05), burnDur: 3 }) });
+    });
+  },
+
+  ma_pull(game) {
+    let t = 0;
+    game.fx.add({
+      update: (dt) => { t += dt; game.enemies.pullTo(game.player.position, 160); return t < 0.6; }, dispose() {},
+    });
+    game.after(0.6, () => blast(game, game.player.position.x, game.player.position.z, 8, 0.5, 0xff5a6a, { knockForce: 6 }));
+  },
+  ma_push(game) { blast(game, game.player.position.x, game.player.position.z, 14, 0.38, 0xff5a6a, { knockForce: 28 }); },
+  ma_rail(game, aim) {
+    game.fx.launchOrb(game.player.position.clone(), aimDir(game.player, aim), {
+      speed: 70, range: 110, color: 0xff5a6a, radius: 0.6, enemies: game.enemies,
+      onExplode: (p) => blast(game, p.x, p.z, 4, 0.42, 0xff5a6a, { knockForce: 16 }),
+    });
+  },
+  ma_field(game) {
+    let t = 0, r = 4;
+    game.fx.add({
+      update: (dt) => {
+        t += dt; r = Math.min(16, r + 8 * dt);
+        if (t % 0.2 < dt) game.enemies.applyArea(game.player.position, r, DMG(0.1), {});
+        return t < 1.6;
+      }, dispose() {},
+    });
+  },
+
+  ph_heal(game) {
+    game.enemies.healPlayer(DMG(0.35));
+    game.fx.pillar({ x: game.player.position.x, z: game.player.position.z, height: 22, color: 0xffb070, duration: 0.9, rings: 4 });
+    if (game.sfx) game.sfx.levelup();
+  },
+  ph_dive(game, aim) {
+    const dir = aim.clone().sub(game.player.position); dir.y = 0;
+    const dist = dir.length();
+    if (dist > 0.01) { dir.normalize(); game.player.position.addScaledVector(dir, Math.min(18, dist)); }
+    blast(game, game.player.position.x, game.player.position.z, 9, 0.5, 0xffb070, { burn: true, burnDps: DMG(0.06), burnDur: 4 });
+  },
+  ph_wing(game) {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      game.fx._flash(game.fx.fires, game.player.position.x + Math.cos(a) * 6, 1.5, game.player.position.z + Math.sin(a) * 6, 0xffb070, 3, 0.3, 0.8);
+    }
+    blast(game, game.player.position.x, game.player.position.z, 10, 0.42, 0xffb070, {});
+  },
+  ph_nova(game) {
+    game.enemies.healPlayer(DMG(0.5));
+    blast(game, game.player.position.x, game.player.position.z, 18, 0.65, 0xffb070, { burn: true, burnDps: DMG(0.08), burnDur: 5, knockForce: 16 });
+    game.fx.shake(0.85, 2.6);
+  },
+
+  bl_dash(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 12);
+    coneHit(game, dir, 14, 3, 0.42, { knockForce: 14 });
+    if (game.sfx) game.sfx.whoosh();
+  },
+  bl_spin(game) {
+    for (let i = 0; i < 6; i++) game.after(i * 0.07, () => {
+      game.fx.slashFx(game.player.position.x, 1.6, game.player.position.z, 0xf0b36a, i * 1.1, 7);
+      game.enemies.applyArea(game.player.position, 7, DMG(0.12), {});
+    });
+  },
+  bl_axe(game) {
+    game.player.vy = 14;
+    game.after(0.35, () => blast(game, game.player.position.x, game.player.position.z, 9, 0.55, 0xf0b36a, { knockForce: 18, stun: true, stunDur: 0.8 }));
+  },
+
+  if_blow(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 7);
+    coneHit(game, dir, 8, 3.6, 0.55, { knockForce: 24 });
+    if (game.sfx) game.sfx.impact();
+  },
+  if_barrage(game) {
+    for (let i = 0; i < 7; i++) game.after(i * 0.06, () => {
+      if (game.player.playAttack) game.player.playAttack();
+      game.enemies.applyArea(game.player.position, 6, DMG(0.12), {});
+    });
+  },
+  if_upper(game) {
+    blast(game, game.player.position.x, game.player.position.z, 8, 0.5, 0xb0b8c8, { lift: true, liftDur: 1.1, knockForce: 8 });
+  },
+
+  el_jab(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 6);
+    coneHit(game, dir, 9, 3, 0.34, { stun: true, stunDur: 0.6 });
+    const p = game.player.position;
+    game.fx.bolt({ x: p.x + dir.x * 4, z: p.z + dir.z * 4, height: 14, color: 0xffe066, life: 0.18 });
+  },
+  el_surge(game) {
+    game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 12, color: 0xffe066, duration: 0.7, debrisCount: 5 });
+    game.enemies.applyArea(game.player.position, 12, DMG(0.36), { stun: true, stunDur: 1.2 });
+    if (game.sfx) game.sfx.thunder();
+  },
+  el_cage(game) {
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      game.fx.bolt({ x: game.player.position.x + Math.cos(a) * 6, z: game.player.position.z + Math.sin(a) * 6, height: 22, color: 0xffe066, life: 0.3 });
+    }
+    blast(game, game.player.position.x, game.player.position.z, 8, 0.45, 0xffe066, { stun: true, stunDur: 2 });
+  },
+
+  fk_pistol(game, aim) {
+    game.fx.launchOrb(game.player.position.clone(), aimDir(game.player, aim), {
+      speed: 58, range: 90, color: 0x3aa0d8, radius: 0.7, enemies: game.enemies,
+      onExplode: (p) => blast(game, p.x, p.z, 4, 0.36, 0x3aa0d8, { knockForce: 16 }),
+    });
+    if (game.sfx) game.sfx.water();
+  },
+  fk_tide(game) {
+    game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 14, color: 0x3aa0d8, duration: 0.8, debrisCount: 6 });
+    blast(game, game.player.position.x, game.player.position.z, 14, 0.4, 0x3aa0d8, { knockForce: 18 });
+  },
+  fk_shock(game) {
+    blast(game, game.player.position.x, game.player.position.z, 12, 0.55, 0x3aa0d8, { lift: true, liftDur: 0.8, knockForce: 14 });
+    if (game.sfx) game.sfx.water();
+  },
+
+  ss_reap(game, aim) {
+    const dir = aimDir(game.player, aim);
+    coneHit(game, dir, 11, 5, 0.4, {});
+    const hits = game.enemies.getNearby(game.player.position, 11);
+    if (hits.length) game.enemies.healPlayer(DMG(0.05 * Math.min(3, hits.length)));
+    game.fx.slashFx(game.player.position.x, 1.8, game.player.position.z, 0x8a6cff, game.player.facing, 10);
+  },
+  ss_harvest(game) {
+    let t = 0;
+    game.fx.add({ update: (dt) => { t += dt; game.enemies.pullTo(game.player.position, 100); return t < 0.45; }, dispose() {} });
+    game.after(0.45, () => blast(game, game.player.position.x, game.player.position.z, 10, 0.5, 0x8a6cff, {}));
+  },
+  ss_void(game, aim) {
+    blast(game, aim.x, aim.z, 10, 0.55, 0x8a6cff, { stun: true, stunDur: 1.2 });
+    game.fx.pillar({ x: aim.x, z: aim.z, height: 24, color: 0x8a6cff, duration: 1, rings: 4 });
+  },
+
+  su_pierce(game, aim) {
+    const dir = aimDir(game.player, aim);
+    coneHit(game, dir, 18, 2.4, 0.42, { knockForce: 12, blind: true, blindDur: 1 });
+    for (let i = 1; i <= 6; i++) game.fx._flash(game.fx.glow, game.player.position.x + dir.x * i * 3, 1.6, game.player.position.z + dir.z * i * 3, 0xffc14a, 2.4, 0.2, 0.3);
+  },
+  su_solar(game, aim) {
+    const dir = aimDir(game.player, aim);
+    coneHit(game, dir, 14, 7, 0.36, { burn: true, burnDps: DMG(0.06), burnDur: 3, blind: true, blindDur: 2 });
+    if (game.sfx) game.sfx.fire();
+  },
+  su_nova(game, aim) {
+    game.fx.meteor({ x: aim.x, z: aim.z, radius: 11, color: 0xffc14a, explosionColor: 0xffe08a, fallTime: 0.6,
+      onImpact: (x, z, r) => blast(game, x, z, r, 0.6, 0xffc14a, { burn: true, burnDps: DMG(0.07), burnDur: 4 }) });
+  },
+
+  ff_bite(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 8);
+    coneHit(game, dir, 9, 3.2, 0.4, { stun: true, stunDur: 1.2 });
+    if (game.sfx) game.sfx.ice();
+  },
+  ff_howl(game) {
+    game.fx.frost(game.player.position.x, game.player.position.z, 14, 0xa8e8ff);
+    game.enemies.applyArea(game.player.position, 14, DMG(0.36), { stun: true, stunDur: 1.8 });
+  },
+  ff_blizzard(game) {
+    let t = 0;
+    game.fx.add({
+      update: (dt) => {
+        t += dt;
+        if (t % 0.2 < dt) {
+          const rp = nearPoint(game.player.position, 10);
+          game.fx.frost(rp.x, rp.z, 4, 0xa8e8ff);
+          game.enemies.applyArea(V(rp.x, rp.z), 4, DMG(0.12), { stun: true, stunDur: 0.5 });
+        }
+        return t < 1.6;
+      }, dispose() {},
+    });
+  },
+
+  td_smash(game) {
+    blast(game, game.player.position.x, game.player.position.z, 10, 0.5, 0xffe066, { knockForce: 20, stun: true, stunDur: 0.8 });
+    game.fx.shake(0.7, 2.2);
+    if (game.sfx) game.sfx.impact();
+  },
+  td_quake(game) {
+    for (let i = 0; i < 3; i++) game.after(i * 0.18, () => {
+      game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 10 + i * 5, color: 0xffe066, duration: 0.55, debrisCount: 4 });
+      game.enemies.applyArea(game.player.position, 10 + i * 5, DMG(0.16), {});
+    });
+  },
+  td_storm(game) {
+    for (let i = 0; i < 6; i++) game.after(i * 0.12, () => {
+      const rp = nearPoint(game.player.position, 12);
+      game.fx.bolt({ x: rp.x, z: rp.z, height: 28, color: 0xffe066, life: 0.22 });
+      game.enemies.applyArea(V(rp.x, rp.z), 5, DMG(0.18), { stun: true, stunDur: 0.6 });
+    });
+    if (game.sfx) game.sfx.thunder();
+  },
+
+  bb_petal(game) {
+    for (let i = 0; i < 6; i++) game.fx.slashFx(game.player.position.x, 1.7, game.player.position.z, 0xff9ac8, game.player.facing + i * 0.5, 7);
+    blast(game, game.player.position.x, game.player.position.z, 8, 0.36, 0xff9ac8, {});
+  },
+  bb_garden(game) {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const x = game.player.position.x + Math.cos(a) * 7, z = game.player.position.z + Math.sin(a) * 7;
+      game.after(i * 0.05, () => blast(game, x, z, 4, 0.18, 0xff9ac8, {}));
+    }
+  },
+  bb_sakura(game) {
+    let t = 0;
+    game.fx.add({
+      update: (dt) => {
+        t += dt; game.enemies.pullTo(game.player.position, 60);
+        if (t % 0.12 < dt) {
+          game.fx.slashFx(game.player.position.x, 1.8, game.player.position.z, 0xff9ac8, t * 9, 8);
+          game.enemies.applyArea(game.player.position, 9, DMG(0.1), {});
+        }
+        return t < 1.5;
+      }, dispose() {},
+    });
+  },
 };
 
 // ------------------------------------------------------------
@@ -676,6 +1105,10 @@ export function castM1(game, weaponId) {
   const aim = game.aimPoint();
   const dirAim = aim.clone().sub(player.position); dirAim.y = 0;
   if (dirAim.lengthSq() > 0.01) player.facing = Math.atan2(dirAim.x, dirAim.z);
+  if (player.playAttack) player.playAttack();
+  if (game.sfx) game.sfx.play(isCombat ? 'punch' : 'slash');
+  const fwdLunge = new THREE.Vector3(Math.sin(player.facing), 0, Math.cos(player.facing));
+  player.lunge.addScaledVector(fwdLunge, 10);
 
   game.m1Combo = (game.m1Combo || 0) + 1;
   if (game.m1Combo > 6) game.m1Combo = 1;
@@ -762,9 +1195,14 @@ export function releaseHeld(game, id) {
 // ------------------------------------------------------------
 export function castSkill(game, id, aim) {
   const h = handlers[id];
-  if (h) { try { return h(game, aim); } catch (e) { console.warn('skill error', id, e); } }
+  if (h) {
+    try {
+      if (game.sfx) game.sfx.skill();
+      if (game.player.playSkill) game.player.playSkill();
+      return h(game, aim);
+    } catch (e) { console.warn('skill error', id, e); }
+  }
   return true;
 }
 
-// skill ids that use hold-to-activate
 export const HOLD_SKILLS = new Set(['p_juicio', 'l_destru']);

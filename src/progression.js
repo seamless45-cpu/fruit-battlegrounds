@@ -2,7 +2,7 @@
 // Fruit dealer, boat / armory shop, world spawns, local guard.
 // ============================================================
 import * as THREE from 'three';
-import { FRUITS, FRUIT_DEALER, FRUIT_SPAWNS, BOATS, SWORD_PRICES, SWORDS } from './config.js';
+import { FRUITS, FRUIT_DEALER, FRUIT_SPAWNS, BOATS, SWORD_PRICES, SWORDS, FIGHTING_STYLES, STYLE_PRICES, GACHA, GACHA_POOL } from './config.js';
 
 const fruitIds = Object.keys(FRUITS);
 
@@ -47,6 +47,64 @@ export class BoatDealer {
     game.tokens -= price;
     game.ownedSwords.add(id);
     return { ok: true, message: `${def.name} purchased — equip it from inventory.` };
+  }
+  buyStyle(id, game) {
+    const def = FIGHTING_STYLES[id];
+    if (!def || id === 'combat') return { ok: false, message: 'Unknown fighting style.' };
+    if (game.ownedStyles.has(id)) return { ok: false, message: `You already know ${def.name}.` };
+    const price = STYLE_PRICES[id];
+    if (game.tokens < price) return { ok: false, message: `Need ${price.toLocaleString()} tokens.` };
+    game.tokens -= price;
+    game.ownedStyles.add(id);
+    return { ok: true, message: `${def.name} learned — equip it from inventory.` };
+  }
+}
+
+export class Gacha {
+  constructor() {
+    this.pityL = 0;
+    this.pityE = 0;
+  }
+  roll(game) {
+    const cost = GACHA.cost;
+    if (game.tokens < cost) return { ok: false, message: `Need ${cost.toLocaleString()} money to spin.` };
+    game.tokens -= cost;
+    this.pityL += 1;
+    this.pityE += 1;
+    let rarity;
+    if (this.pityL >= GACHA.legendaryPity) rarity = 'legendary';
+    else if (this.pityE >= GACHA.epicPity) rarity = 'epic';
+    else {
+      let r = Math.random();
+      if (this.pityL >= GACHA.softPityStart) r -= (this.pityL - GACHA.softPityStart) * 0.012;
+      const rates = GACHA.rates;
+      if (r < rates.legendary) rarity = 'legendary';
+      else if (r < rates.legendary + rates.epic) rarity = 'epic';
+      else if (r < rates.legendary + rates.epic + rates.rare) rarity = 'rare';
+      else rarity = 'common';
+    }
+    if (rarity === 'legendary') this.pityL = 0;
+    if (rarity === 'epic' || rarity === 'legendary') this.pityE = 0;
+    let pool = GACHA_POOL.filter((p) => p.rarity === rarity);
+    if (!pool.length) pool = GACHA_POOL;
+    const pick = pool[(Math.random() * pool.length) | 0];
+    let dupe = false;
+    if (pick.type === 'fruit') {
+      if (game.ownedFruits.has(pick.id)) dupe = true;
+      else game.ownedFruits.add(pick.id);
+    } else if (pick.type === 'sword') {
+      if (game.ownedSwords.has(pick.id)) dupe = true;
+      else game.ownedSwords.add(pick.id);
+    } else {
+      if (game.ownedStyles.has(pick.id)) dupe = true;
+      else game.ownedStyles.add(pick.id);
+    }
+    if (dupe) game.tokens += Math.floor(cost * 0.45);
+    const tag = rarity.toUpperCase();
+    const msg = dupe
+      ? `${tag} duplicate ${pick.ref.name} — refunded ${Math.floor(cost * 0.45)} money.`
+      : `${tag}! You pulled ${pick.emoji} ${pick.ref.name} (${pick.type}).`;
+    return { ok: true, item: pick, rarity, dupe, pityL: this.pityL, pityE: this.pityE, message: msg };
   }
 }
 

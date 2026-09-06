@@ -38,6 +38,7 @@ export class EnemyManager {
       stunUntil: 0, liftUntil: 0, blindUntil: 0,
       burnDps: 0, burnUntil: 0, knockVel: new THREE.Vector3(),
       alive: true, randDir: new THREE.Vector3(), walk: Math.random() * 10,
+      animAttack: 0, animHurt: 0, dying: 0,
     });
   }
 
@@ -47,6 +48,17 @@ export class EnemyManager {
     const player = this.getPlayer();
     for (const e of this.enemies) {
       if (!e.alive) continue;
+      if (e.dying > 0) {
+        e.dying -= dt;
+        const k = 1 - Math.max(0, e.dying) / 0.55;
+        e.group.rotation.x = k * 1.25;
+        e.group.position.y = Math.sin(k * Math.PI) * 0.4;
+        if (e.aura) e.aura.material.opacity = Math.max(0, 0.4 * (1 - k));
+        if (e.dying <= 0) this._finishKill(e);
+        continue;
+      }
+      e.animAttack = Math.max(0, e.animAttack - dt);
+      e.animHurt = Math.max(0, e.animHurt - dt);
       if (e.burnUntil > now) { e.hp -= e.burnDps * dt; if (e.hp <= 0) { this._kill(e); continue; } }
       const stunned = e.stunUntil > now;
       const lifted = e.liftUntil > now;
@@ -67,7 +79,10 @@ export class EnemyManager {
           toP.normalize();
           e.position.addScaledVector(toP, ENEMY.speed * (1 + (e.tier - 1) * 0.18) * dt);
           e.group.lookAt(player.position.x, e.position.y, player.position.z);
-          if (dist < 2.0) this.onPlayerHit(ENEMY.touchDamage * e.tier * dt * 6);
+          if (dist < 2.2) {
+            e.animAttack = 0.28;
+            this.onPlayerHit(ENEMY.touchDamage * e.tier * dt * 6);
+          }
           moving = true;
         }
       }
@@ -80,12 +95,17 @@ export class EnemyManager {
       if (er > ir) { e.position.x *= ir / er; e.position.z *= ir / er; }
 
       e.group.position.x = e.position.x; e.group.position.z = e.position.z;
-      e.walk += dt * (moving ? 10 : 0);
-      const swing = moving ? Math.sin(e.walk) * 0.6 : 0;
+      e.walk += dt * (moving ? 12 : 0);
+      const swing = moving ? Math.sin(e.walk) * 0.75 : 0;
+      const atk = e.animAttack > 0 ? Math.sin((1 - e.animAttack / 0.28) * Math.PI) : 0;
+      const ht = e.animHurt > 0 ? Math.sin((1 - e.animHurt / 0.22) * Math.PI) : 0;
       if (e.leftLeg) {
         e.leftLeg.rotation.x = swing; e.rightLeg.rotation.x = -swing;
-        e.leftArm.rotation.x = -swing * 0.5; e.rightArm.rotation.x = swing * 0.5;
+        e.leftArm.rotation.x = -swing * 0.55 - ht * 0.4;
+        e.rightArm.rotation.x = swing * 0.55 + atk * 1.4;
+        e.rightArm.rotation.z = -atk * 0.5;
       }
+      if (e.head) e.head.rotation.x = -ht * 0.4;
       e.aura.rotation.z += dt * 1.8;
       e.aura.material.opacity = 0.25 + Math.sin(now * 5) * 0.16;
       const hpFrac = Math.max(0, e.hp / e.maxHp);
@@ -98,6 +118,11 @@ export class EnemyManager {
   }
 
   _kill(e) {
+    if (e.dying) return;
+    e.dying = 0.55;
+  }
+  _finishKill(e) {
+    if (!e.alive) return;
     e.alive = false;
     this.scene.remove(e.group);
     this.onKill(e);
@@ -124,9 +149,11 @@ export class EnemyManager {
     return hits;
   }
   damage(e, dmg, opts = {}) {
+    if (e.dying) return;
     const dealt = (dmg || 0) * (1 + this.getPlayer().damageBonus);
     if (dealt) {
       e.hp -= dealt;
+      e.animHurt = 0.22;
       if (this.fx && dealt >= 6) {
         const y = (e.group.position.y || 0) + 3.3;
         this.fx.popup(e.position.x, y, e.position.z, dealt, dealt > 400 ? 'crit' : 'hit');

@@ -25,6 +25,9 @@ export class Player {
     this.walk = 0;
     this.mountedBoat = null;
     this.boatMesh = null;
+    this.lunge = new THREE.Vector3();
+    this.anim = { attack: 0, skill: 0, hurt: 0, jump: 0, combo: 0 };
+    this._wasGround = true;
 
     const rig = createPlayerModel();
     this.group = rig.group;
@@ -36,9 +39,15 @@ export class Player {
     this.leftLeg = rig.leftLeg;
     this.rightLeg = rig.rightLeg;
     this.head = rig.head;
+    this.hips = rig.hips || null;
     this.weaponMesh = null;
     scene.add(this.group);
   }
+
+  playAttack() { this.anim.attack = 0.32; this.anim.combo = (this.anim.combo + 1) % 4; }
+  playSkill() { this.anim.skill = 0.48; }
+  playHurt() { this.anim.hurt = 0.24; }
+  playJump() { this.anim.jump = 0.28; }
 
   setFruitColor(hex) {
     this.aura.material.color.setHex(hex);
@@ -60,12 +69,16 @@ export class Player {
       this.onGround = false;
       this.airJumps = PLAYER.maxAirJumps - 1;
       this._jumpAt = now;
+      this.playJump();
+      if (this.sfxJump) this.sfxJump();
       return true;
     }
     if (this.airJumps > 0) {
       this.vy = PLAYER.airJumpStrength;
       this.airJumps -= 1;
       this._jumpAt = now;
+      this.playJump();
+      if (this.sfxJump) this.sfxJump();
       return true;
     }
     return false;
@@ -91,6 +104,11 @@ export class Player {
     const spd = this.mountedBoat ? this.mountedBoat.speed : land ? this.speed : PLAYER.swimSpeed;
     const v = moveDir.clone().multiplyScalar(spd);
     this.position.addScaledVector(v, dt);
+    if (this.lunge.lengthSq() > 0.01) {
+      this.position.addScaledVector(this.lunge, dt);
+      this.lunge.multiplyScalar(Math.max(0, 1 - dt * 9));
+      if (this.lunge.lengthSq() < 0.2) this.lunge.set(0, 0, 0);
+    }
 
     const maxR = this.mountedBoat ? WORLD.oceanRadius : WORLD.oceanRadius * 0.72;
     const r = Math.hypot(this.position.x, this.position.z);
@@ -120,18 +138,37 @@ export class Player {
     this.group.rotation.y = this.facing;
 
     const moving = moveDir.lengthSq() > 0.002 && this.onGround;
-    this.walk += dt * (moving ? 11 : 0);
-    const swing = moving ? Math.sin(this.walk) * 0.65 : 0;
+    this.walk += dt * (moving ? 13 : 0);
+    const swing = moving ? Math.sin(this.walk) * 0.85 : 0;
+    const a = this.anim;
+    a.attack = Math.max(0, a.attack - dt);
+    a.skill = Math.max(0, a.skill - dt);
+    a.hurt = Math.max(0, a.hurt - dt);
+    a.jump = Math.max(0, a.jump - dt);
+    const atk = a.attack > 0 ? Math.sin((1 - a.attack / 0.32) * Math.PI) : 0;
+    const sk = a.skill > 0 ? Math.sin((1 - a.skill / 0.48) * Math.PI) : 0;
+    const ht = a.hurt > 0 ? Math.sin((1 - a.hurt / 0.24) * Math.PI) : 0;
     if (this.leftLeg) {
-      this.leftLeg.rotation.x = swing;
-      this.rightLeg.rotation.x = -swing;
-      this.leftArm.rotation.x = -swing * 0.55;
-      this.rightArm.rotation.x = swing * 0.55;
+      if (!this.onGround) {
+        this.leftLeg.rotation.x = 0.55 + a.jump * 0.8;
+        this.rightLeg.rotation.x = 0.2;
+        this.leftArm.rotation.x = -0.7;
+        this.rightArm.rotation.x = 0.5;
+        this.leftArm.rotation.z = 0.35;
+        this.rightArm.rotation.z = -0.35;
+      } else {
+        this.leftLeg.rotation.x = swing;
+        this.rightLeg.rotation.x = -swing;
+        this.leftArm.rotation.x = -swing * 0.7 - atk * 0.5 - sk * 0.9;
+        this.rightArm.rotation.x = swing * 0.7 + atk * (a.combo % 2 ? 1.6 : -0.4) + sk * 0.4;
+        this.leftArm.rotation.z = 0.08 + sk * 0.5;
+        this.rightArm.rotation.z = -0.08 - atk * 0.4;
+      }
     }
-    if (!this.onGround && this.leftLeg) {
-      this.leftLeg.rotation.x = 0.35;
-      this.rightLeg.rotation.x = 0.15;
-    }
+    if (this.head) this.head.rotation.x = -ht * 0.35 + (moving ? Math.sin(this.walk) * 0.05 : 0);
+    if (this.hips) this.hips.rotation.y = swing * 0.12 + atk * 0.25;
+    if (this._wasGround !== this.onGround && this.onGround && this.sfxLand) this.sfxLand();
+    this._wasGround = this.onGround;
 
     const pulse = 1 + Math.sin(performance.now() * 0.005) * 0.08;
     this.aura.scale.set(3.6 * pulse, 4.2 * pulse, 3.6 * pulse);
@@ -145,6 +182,7 @@ export class Player {
 
   damage(dmg) {
     this.hp = Math.max(0, this.hp - dmg);
+    this.playHurt();
     return this.hp <= 0;
   }
   heal(dmg) { this.hp = Math.min(this.maxHp, this.hp + dmg); }

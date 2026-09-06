@@ -1,7 +1,7 @@
 // ============================================================
 //  Reworked HUD, dealers, menu, gifts, quests, motion.
 // ============================================================
-import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES, QUESTS } from './config.js';
+import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES, STYLE_PRICES, QUESTS, GACHA } from './config.js';
 
 export class UI {
   constructor(game) {
@@ -65,7 +65,7 @@ export class UI {
     document.querySelectorAll('#invSlots .slot').forEach((slot) => {
       const id = slot.dataset.id;
       const item = INVENTORY_ITEMS.find((entry) => entry.id === id);
-      const unlocked = item.type === 'style' || (item.type === 'fruit' ? g.ownedFruits.has(id) : g.ownedSwords.has(id));
+      const unlocked = item.type === 'style' ? g.ownedStyles.has(id) : (item.type === 'fruit' ? g.ownedFruits.has(id) : g.ownedSwords.has(id));
       slot.classList.toggle('locked', !unlocked);
       const isFruit = unlocked && g.equippedFruit === id;
       const isSword = unlocked && g.equippedSword === id;
@@ -187,7 +187,28 @@ export class UI {
     body.appendChild(toggle('Bloom / Glow', 'bloom'));
     body.appendChild(toggle('Fog', 'fog'));
     body.appendChild(toggle('Particles', 'particles'));
+    body.appendChild(toggle('Clouds', 'clouds'));
+    body.appendChild(toggle('Soft-lock Aim', 'softLock'));
+    body.appendChild(toggle('Invert Look X', 'invertLookX'));
+    body.appendChild(toggle('Invert Look Y', 'invertLookY'));
+    body.appendChild(slider('Look Sensitivity', 'lookSens', 0.4, 2.2, 0.05));
+    body.appendChild(slider('Field of View', 'fov', 45, 85, 1));
+    body.appendChild(slider('Free Aim Mix', 'freeAim', 0, 1, 0.05));
+    body.appendChild(slider('Exposure', 'exposure', 0.7, 1.8, 0.02));
     body.appendChild(slider('Resolution Scale', 'pixelRatioScale', 0.5, 1.5, 0.05));
+
+    const sfxRow = document.createElement('div'); sfxRow.className = 'set-row';
+    const sfxCb = document.createElement('input'); sfxCb.type = 'checkbox'; sfxCb.checked = this.game.sfx.enabled;
+    sfxCb.addEventListener('change', () => { this.game.sfx.enabled = sfxCb.checked; if (sfxCb.checked) this.game.sfx.unlock(); });
+    sfxRow.innerHTML = '<span>Sound FX</span>'; sfxRow.appendChild(sfxCb);
+    body.appendChild(sfxRow);
+
+    const volRow = document.createElement('div'); volRow.className = 'set-row';
+    const vol = document.createElement('input'); vol.type = 'range'; vol.min = 0; vol.max = 1; vol.step = 0.05; vol.value = this.game.sfx.volume;
+    const volVal = document.createElement('span'); volVal.textContent = this.game.sfx.volume;
+    vol.addEventListener('input', () => { this.game.sfx.setVolume(parseFloat(vol.value)); volVal.textContent = vol.value; this.game.sfx.unlock(); });
+    volRow.innerHTML = '<span>SFX Volume</span>'; volRow.appendChild(vol); volRow.appendChild(volVal);
+    body.appendChild(volRow);
 
     const openSettings = () => this.togglePanel('settingsPanel');
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
@@ -219,6 +240,9 @@ export class UI {
     });
     document.getElementById('questBtn').addEventListener('click', () => { this.togglePanel('questPanel'); this.renderQuests(); });
     document.getElementById('questClose').addEventListener('click', () => this.closePanel('questPanel'));
+    document.getElementById('gachaBtn').addEventListener('click', () => { this.togglePanel('gachaPanel'); this.renderGacha(); });
+    document.getElementById('gachaClose').addEventListener('click', () => this.closePanel('gachaPanel'));
+    document.getElementById('gachaSpin').addEventListener('click', () => this.game.spinGacha());
     const talkBtn = document.getElementById('talkBtn');
     if (talkBtn) {
       talkBtn.addEventListener('pointerdown', (e) => {
@@ -229,7 +253,7 @@ export class UI {
     ['health', 'fruit', 'sword', 'fighting'].forEach((type) => {
       document.getElementById(`${type}StatBuy`).addEventListener('click', () => this.game.allocateStat(type));
     });
-    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats(); this.renderQuests();
+    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats(); this.renderQuests(); this.renderGacha();
   }
 
   renderDealerStock() {
@@ -268,6 +292,36 @@ export class UI {
       });
       swords.appendChild(card);
     });
+    const styles = document.getElementById('styleStock');
+    if (styles) {
+      styles.innerHTML = '';
+      Object.values(FIGHTING_STYLES).forEach((s) => {
+        if (s.id === 'combat') return;
+        const owned = this.game.ownedStyles.has(s.id);
+        const card = document.createElement('button'); card.className = 'dealer-card'; card.disabled = owned;
+        card.innerHTML = `<span>${s.emoji}</span><b>${s.name}</b><small>${owned ? 'Owned' : `${STYLE_PRICES[s.id].toLocaleString()} money`}</small>`;
+        card.addEventListener('click', () => {
+          const result = this.game.shipwright.buyStyle(s.id, this.game);
+          this.setTokens(this.game.tokens); this.refreshInventory(); this.renderBoatShop(); this.toast(result.message);
+        });
+        styles.appendChild(card);
+      });
+    }
+  }
+
+  renderGacha(last) {
+    const pity = document.getElementById('gachaPity');
+    if (pity) {
+      const g = this.game.gacha;
+      pity.textContent = `Pity ${g.pityL}/${GACHA.legendaryPity} legendary · ${g.pityE}/${GACHA.epicPity} epic · soft from ${GACHA.softPityStart}`;
+    }
+    const cost = document.getElementById('gachaCost');
+    if (cost) cost.textContent = GACHA.cost.toLocaleString();
+    if (!last || !last.ok) return;
+    const result = document.getElementById('gachaResult');
+    if (!result) return;
+    result.className = 'gacha-result ' + last.rarity;
+    result.innerHTML = `<span>${last.item.emoji}</span><b>${last.item.ref.name}</b><small>${last.rarity}${last.dupe ? ' · duplicate' : ''}</small>`;
   }
 
   renderQuests() {

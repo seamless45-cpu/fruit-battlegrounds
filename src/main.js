@@ -10,8 +10,9 @@ import { UI } from './ui.js';
 import { Input } from './input.js';
 import { castSkill, castM1, tickHeld, releaseHeld } from './skills.js';
 import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER, BOATS, GIFT_CODES, QUESTS } from './config.js';
-import { FruitDealer, FruitSpawner, BoatDealer, validateGameState } from './progression.js';
+import { FruitDealer, FruitSpawner, BoatDealer, Gacha, validateGameState } from './progression.js';
 import { createSwordMesh } from './models.js';
+import { sfx } from './audio.js';
 
 const isMobile = window.matchMedia('(pointer: coarse)').matches;
 
@@ -37,7 +38,11 @@ const player = new Player(world.scene, world);
 const enemies = new EnemyManager(world.scene, () => player, (d) => onPlayerHit(d), (e) => onKill(e), fx);
 const dealer = new FruitDealer();
 const shipwright = new BoatDealer();
+const gacha = new Gacha();
 const fruitSpawner = new FruitSpawner(world.scene, world.fruitSpawnPoints);
+sfx.unlock();
+player.sfxLand = () => sfx.land();
+player.sfxJump = () => sfx.jump();
 
 const flash = document.createElement('div');
 flash.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:80;opacity:0;background:#000;';
@@ -50,7 +55,7 @@ function loadRedeemed() {
 
 const game = {
   isMobile, playing: false,
-  world, fx, player, enemies, dealer, shipwright, fruitSpawner, scene: world.scene,
+  world, fx, player, enemies, dealer, shipwright, fruitSpawner, gacha, sfx, scene: world.scene,
   equippedFruit: null, equippedSword: null, equippedStyle: 'combat', activeWeapon: 'style',
   cooldowns: {},
   tokens: 0, kills: 0,
@@ -59,7 +64,7 @@ const game = {
   redeemed: loadRedeemed(),
   level: 1, xp: 0, xpToNext: 100,
   statPoints: 0, stats: { health: 0, fruit: 0, sword: 0, fighting: 0 },
-  ownedFruits: new Set(), ownedSwords: new Set(), ownedBoats: new Set(), selectedBoat: null,
+  ownedFruits: new Set(), ownedSwords: new Set(), ownedStyles: new Set(['combat']), ownedBoats: new Set(), selectedBoat: null,
   dashCharges: 3, dashTimer: 0,
   held: {}, chargeT: 0, heldStart: 0,
   m1Combo: 0, endLag: 0,
@@ -180,9 +185,26 @@ game.toggleSail = () => {
 
 game.startPlay = () => {
   if (game.playing) return;
+  sfx.unlock();
   game.playing = true;
   ui.showGameUI();
   ui.toast('WASD or joystick • drag to look • tap to attack • E talk to quests', 4800);
+};
+
+game.spinGacha = () => {
+  sfx.unlock();
+  const result = gacha.roll(game);
+  ui.setTokens(game.tokens);
+  ui.refreshInventory();
+  if (ui.renderBoatShop) ui.renderBoatShop();
+  if (ui.renderGacha) ui.renderGacha(result);
+  if (result.ok) {
+    if (result.rarity === 'legendary') sfx.legendary();
+    else sfx.gacha();
+    if (!result.dupe && result.item && result.item.type === 'fruit') game.noteQuest('fruits');
+  }
+  ui.toast(result.message);
+  return result;
 };
 
 function activeWeaponDef() {
@@ -202,7 +224,7 @@ function initCooldowns() {
 function applyEquipVisuals() {
   const f = FRUITS[game.equippedFruit];
   player.setFruitColor(f ? f.color : 0x444466);
-  if (game.equippedSword) {
+  if (game.activeWeapon === 'sword' && game.equippedSword) {
     const s = SWORDS[game.equippedSword];
     player.setWeaponMesh(createSwordMesh(s.id, s.color));
   } else player.setWeaponMesh(null);
@@ -213,7 +235,12 @@ game.toggleEquip = (id) => {
   if (!item) return;
   if (item.type === 'fruit' && !game.ownedFruits.has(id)) { ui.toast('Buy this fruit from the dealer or find it in the arena.'); return; }
   if (item.type === 'sword' && !game.ownedSwords.has(id)) { ui.toast('Buy this sword from the Shipwright armory.'); return; }
-  if (item.type === 'style') { game.equippedStyle = id; game.activeWeapon = 'style'; game.refreshCombatBonus(); initCooldowns(); ui.buildSkillBar(); ui.refreshInventory(); return; }
+  if (item.type === 'style') {
+    if (!game.ownedStyles.has(id)) { ui.toast('Learn this style from the Shipwright dojo or the gacha.'); return; }
+    game.equippedStyle = id; game.activeWeapon = 'style'; game.refreshCombatBonus(); applyEquipVisuals(); initCooldowns(); ui.buildSkillBar(); ui.refreshInventory();
+    ui.toast(`Equipped: ${item.ref.name} (style)`);
+    return;
+  }
   if (item.type === 'fruit') {
     if (game.equippedFruit === id) { game.equippedFruit = null; if (game.activeWeapon === 'fruit') game.activeWeapon = game.equippedSword ? 'sword' : 'style'; }
     else { game.equippedFruit = id; game.activeWeapon = 'fruit'; }
@@ -234,6 +261,7 @@ game.toggleWeapon = () => {
   if (available.length > 1) {
     game.activeWeapon = available[(available.indexOf(game.activeWeapon) + 1) % available.length];
     game.refreshCombatBonus();
+    applyEquipVisuals();
     initCooldowns(); ui.buildSkillBar(); ui.refreshInventory();
     const w = activeWeaponDef();
     ui.toast(`Active: ${w ? w.name : 'none'}`);
@@ -295,7 +323,7 @@ game.tryUpgradeDeath = () => {
 function onPlayerHit(dmg) {
   if (dmg >= 0) {
     player.damage(dmg);
-    if (dmg >= 8) fx.popup(player.position.x, player.position.y + 3.2, player.position.z, dmg, 'hurt');
+    if (dmg >= 8) { fx.popup(player.position.x, player.position.y + 3.2, player.position.z, dmg, 'hurt'); sfx.hurt(); }
   } else {
     player.heal(-dmg);
     if (-dmg >= 8) fx.popup(player.position.x, player.position.y + 3.2, player.position.z, -dmg, 'heal');
@@ -325,6 +353,7 @@ function addXp(xpGain) {
   if (leveled) {
     fx.pillar({ x: player.position.x, z: player.position.z, height: 36, color: 0xffd56b, duration: 1.2, rings: 5 });
     fx.shake(0.45, 1.6);
+    sfx.levelup();
     ui.toast(`LEVEL UP! You are now Lv ${game.level}. Full HP restored.`, 3000);
   }
   return leveled;

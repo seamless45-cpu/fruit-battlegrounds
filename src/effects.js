@@ -401,22 +401,46 @@ export class FX {
   }
 
   launchOrb(from, dir, opts = {}) {
-    const { speed = 40, range = 110, color = 0xffffff, radius = 1.3, hitRadius = 2.4, enemies, onExplode } = opts;
+    const {
+      speed = 40, range = 110, color = 0xffffff, radius = 1.3, hitRadius = 2.4, enemies, onExplode,
+      gravity = 0, arc = 0, homing = 0,
+    } = opts;
     const m = this.orbs.take();
     if (!m) { if (onExplode) onExplode(from, false); return; }
     m.material.color.setHex(color);
     m.position.copy(from); m.position.y = (from.y || 0) + 1.5;
     m.scale.setScalar(radius * 2);
-    const d = dir.clone().normalize();
+    const vel = dir.clone();
+    if (vel.lengthSq() < 0.0001) vel.set(0, 0, 1);
+    vel.normalize().multiplyScalar(speed);
+    vel.y += arc;
     let traveled = 0;
     this.add({
       update: (dt) => {
-        traveled += speed * dt;
-        m.position.addScaledVector(d, speed * dt);
+        if (homing && enemies) {
+          const near = enemies.alive();
+          let best = null, bestD = 18;
+          for (const e of near) {
+            const dd = e.position.distanceTo(m.position);
+            if (dd < bestD) { bestD = dd; best = e; }
+          }
+          if (best) {
+            const want = best.position.clone().sub(m.position); want.y += 1;
+            if (want.lengthSq() > 0.01) {
+              want.normalize().multiplyScalar(speed);
+              vel.lerp(want, Math.min(1, homing * dt));
+            }
+          }
+        }
+        if (gravity) vel.y -= gravity * dt;
+        const step = vel.length() * dt;
+        traveled += step;
+        m.position.addScaledVector(vel, dt);
         m.rotation.y += dt * 8;
         let struck = false;
         if (enemies) struck = enemies.alive().some((e) => e.position.distanceTo(m.position) < hitRadius);
-        if (struck || traveled >= range) {
+        if (struck || traveled >= range || m.position.y < 0.15) {
+          if (m.position.y < 0.15) m.position.y = 0.15;
           this.explosion({ x: m.position.x, z: m.position.z, radius: 6, color, life: 0.4, debris: 3 });
           if (onExplode) onExplode(m.position, struck);
           return false;

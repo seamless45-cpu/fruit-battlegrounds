@@ -60,8 +60,12 @@ export class Input {
       this._ptr.x = e.clientX; this._ptr.y = e.clientY;
       if (this.dragDist > 8) this.dragging = true;
       if (this.dragging) {
-        this.camYaw -= dx * 0.005;
-        this.camPitch = Math.max(0.18, Math.min(1.2, this.camPitch - dy * 0.004));
+        const gfx = this.game.world.gfx;
+        const sens = (gfx.lookSens || 1) * 0.0048;
+        const ix = gfx.invertLookX ? -1 : 1;
+        const iy = gfx.invertLookY ? -1 : 1;
+        this.camYaw += dx * sens * ix;
+        this.camPitch = Math.max(0.16, Math.min(1.18, this.camPitch + dy * sens * 0.82 * iy));
       }
       this._setNDC(e.clientX, e.clientY);
     });
@@ -138,7 +142,7 @@ export class Input {
     if (k === 'e') { this.game.interact(); return; }
     if (k === 'q') { this.game.toggleSail(); return; }
     if (k === 'escape') {
-      ['settingsPanel', 'helpPanel', 'codesPanel', 'questPanel', 'dealerPanel', 'statsPanel', 'boatPanel']
+      ['settingsPanel', 'helpPanel', 'codesPanel', 'questPanel', 'dealerPanel', 'statsPanel', 'boatPanel', 'gachaPanel']
         .forEach((id) => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     }
 
@@ -173,18 +177,48 @@ export class Input {
     if (this.keys.has('s') || this.keys.has('arrowdown')) z += 1;
     if (this.keys.has('a') || this.keys.has('arrowleft')) x -= 1;
     if (this.keys.has('d') || this.keys.has('arrowright')) x += 1;
-    const yaw = this.camYaw;
-    const lookX = -Math.sin(yaw), lookZ = -Math.cos(yaw);
-    const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
-    const v = new THREE.Vector3(lookX * (-z) + rightX * x, 0, lookZ * (-z) + rightZ * x);
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 0.0001) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+    const v = new THREE.Vector3().addScaledVector(fwd, -z).addScaledVector(right, x);
     if (v.lengthSq() > 1) v.normalize();
     return v;
   }
 
   aimPoint(out = this._aim) {
-    this.ray.setFromCamera(this.ndc, this.camera);
+    const gfx = this.game.world.gfx;
+    const mix = gfx.freeAim == null ? 0.32 : gfx.freeAim;
+    this._ndcAim = this._ndcAim || new THREE.Vector2();
+    this._ndcAim.set(this.ndc.x * mix, this.ndc.y * mix);
+    this.ray.setFromCamera(this._ndcAim, this.camera);
     const hit = this.ray.ray.intersectPlane(this.plane, out);
-    if (!hit) out.set(0, 0, 0);
+    if (!hit) {
+      const p = this.game.player.position;
+      out.set(p.x, 0, p.z);
+    }
+    if (gfx.softLock !== false && this.game.enemies) {
+      const list = this.game.enemies.alive();
+      let best = null, bestScore = 12;
+      const camFwd = new THREE.Vector3();
+      this.camera.getWorldDirection(camFwd); camFwd.y = 0;
+      if (camFwd.lengthSq() > 0.0001) camFwd.normalize();
+      for (const e of list) {
+        if (e.dying) continue;
+        const to = e.position.clone().sub(this.game.player.position); to.y = 0;
+        const d = to.length();
+        if (d > 28 || d < 0.4) continue;
+        to.normalize();
+        const dot = to.dot(camFwd);
+        if (dot < 0.38) continue;
+        const aimDist = Math.hypot(e.position.x - out.x, e.position.z - out.z);
+        const score = d * (1.5 - dot) + aimDist * 0.35;
+        if (aimDist < 10 && score < bestScore) { bestScore = score; best = e; }
+      }
+      if (best) out.set(best.position.x, 0, best.position.z);
+    }
     return out;
   }
 }

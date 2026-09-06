@@ -13,6 +13,14 @@ const GFX = {
   fog: true,
   particles: true,
   pixelRatioScale: 1,
+  invertLookX: false,
+  invertLookY: false,
+  lookSens: 1,
+  fov: 60,
+  softLock: true,
+  freeAim: 0.32,
+  exposure: 1.22,
+  clouds: true,
 };
 
 export class World {
@@ -295,6 +303,12 @@ export class World {
       if (this.sun.shadow.mapSize.x !== map) this.sun.shadow.mapSize.set(map, map);
     }
     this.scene.fog = this.gfx.fog ? new THREE.Fog(this.fogColor || 0xb9d8ef, 140, 560) : null;
+    this.renderer.toneMappingExposure = this.gfx.exposure || 1.22;
+    if (this.camera && this.gfx.fov) {
+      this.camera.fov = this.gfx.fov;
+      this.camera.updateProjectionMatrix();
+    }
+    if (this.clouds) this.clouds.forEach((c) => { c.group.visible = this.gfx.clouds !== false; });
   }
 
   setGfx(key, value) {

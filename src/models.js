@@ -84,7 +84,7 @@ export function createPlayerModel() {
     group.add(ring); auraRings.push(ring);
   }
 
-  return { group, aura, auraRings, weaponAnchor, leftArm, rightArm, leftLeg, rightLeg, head, torso };
+  return { group, aura, auraRings, weaponAnchor, leftArm, rightArm, leftLeg, rightLeg, head, torso, hips };
 }
 
 export function createEnemyModel(tier = 1) {
@@ -203,6 +203,23 @@ export function createSwordMesh(id, color) {
   } else if (id === 'bisento') {
     g.add(mesh(GEO.cyl, wood, 0.18, 2.6, 0.18, 0, 1.1, 0));
     g.add(mesh(GEO.box, blade, 0.16, 1.6, 0.9, 0, 2.6, 0));
+  } else if (id === 'soulscythe') {
+    g.add(mesh(GEO.cyl, dark, 0.14, 2.8, 0.14, 0, 1.2, 0));
+    g.add(mesh(GEO.box, blade, 0.12, 1.8, 1.4, 0.2, 2.7, 0, 0, 0.35));
+  } else if (id === 'sunspear') {
+    g.add(mesh(GEO.cyl, wood, 0.14, 3.4, 0.14, 0, 1.4, 0));
+    g.add(mesh(GEO.cone, blade, 0.5, 1.2, 0.5, 0, 3.3, 0));
+  } else if (id === 'frostfang') {
+    g.add(mesh(GEO.box, blade, 0.16, 2.6, 0.5, 0.1, 1.5, 0, 0, 0.2));
+    g.add(mesh(GEO.cone, blade, 0.35, 0.7, 0.35, 0.25, 2.9, 0, 0, 0.5));
+    g.add(mesh(GEO.cyl, dark, 0.2, 0.8, 0.2, 0, -0.3, 0));
+  } else if (id === 'thunderdrum') {
+    g.add(mesh(GEO.cyl, wood, 0.16, 2.2, 0.16, 0, 1.0, 0));
+    g.add(mesh(GEO.box, blade, 0.9, 0.7, 0.5, 0, 2.2, 0));
+  } else if (id === 'bloomblade') {
+    g.add(mesh(GEO.box, blade, 0.1, 3.2, 0.32, 0, 1.65, 0));
+    g.add(mesh(GEO.box, dark, 0.6, 0.08, 0.16, 0, 0.1, 0));
+    g.add(mesh(GEO.sphere, blade, 0.35, 0.22, 0.35, 0, 3.2, 0));
   } else {
     g.add(mesh(GEO.box, blade, 0.18, 3.2, 0.5, 0, 1.6, 0));
     g.add(mesh(GEO.box, dark, 1.0, 0.18, 0.18, 0, 0.1, 0));
