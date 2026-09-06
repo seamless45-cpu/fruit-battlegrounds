@@ -536,7 +536,6 @@ export function castM1(game, weaponId) {
     }
     game.endLag = 0;
   } else game.endLag = 0.08;
-  }
 }
 
 // ------------------------------------------------------------
