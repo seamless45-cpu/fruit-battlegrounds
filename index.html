@@ -52,7 +52,8 @@
 
     <!-- Top bar: stats -->
     <div id="topbar" class="hidden">
-      <div class="stat"><span class="stat-label">HP</span><div class="hpbar"><div class="hpfill" id="hpFill"></div></div></div>
+      <div class="stat hp-stat"><span class="stat-label">HP</span><div class="hpbar"><div class="hpfill" id="hpFill"></div></div><b id="hpCount">2,000 / 2,000</b></div>
+      <div class="stat level-stat"><span class="stat-label">LVL</span><b id="levelCount">1</b><div class="xpbar" title="Experience"><div class="xpfill" id="xpFill"></div></div><b id="xpCount">0 / 100</b></div>
       <div class="stat">Tokens: <b id="tokenCount">0</b></div>
       <div class="stat">Kills: <b id="killCount">0</b></div>
       <div class="stat">FPS: <b id="fpsCount">0</b></div>
@@ -74,6 +75,34 @@
       <div class="skill-list" id="skillList"></div>
     </div>
     <button id="skillReopen" class="hidden" title="Open skills">⚔ Skills</button>
+
+    <div id="utilityBar" class="hidden">
+      <button id="dealerBtn" type="button">🍎 Dealer</button>
+      <button id="statsBtn" type="button">✦ Stats</button>
+    </div>
+    <aside id="dealerPanel" class="hidden" role="dialog" aria-label="Fruit dealer">
+      <div class="set-head"><span>FRUIT DEALER</span><button id="dealerClose" type="button" aria-label="Close fruit dealer">✕</button></div>
+      <p class="panel-copy">Limited stock refreshes in <b id="stockTimer">10:00</b>.</p>
+      <div id="dealerStock" class="dealer-stock"></div>
+    </aside>
+    <aside id="statsPanel" class="hidden" role="dialog" aria-label="Player statistics">
+      <div class="set-head"><span>COMBAT STATS</span><button id="statsClose" type="button" aria-label="Close stats">✕</button></div>
+      <div class="stat-points">Available points <b id="statPoints">0</b></div>
+      <div class="stat-allocation"><div><b>❤ Health</b><span id="healthStatValue">0</span><small>+20 maximum HP per point</small></div><div class="allocate-controls"><input id="healthStatInput" type="number" min="1" step="1" value="1" aria-label="Health points to invest"><button id="healthStatBuy" type="button">Invest</button></div></div>
+      <div class="stat-allocation"><div><b>🍏 Fruit</b><span id="fruitStatValue">0</span><small>+5% fruit damage per point</small></div><div class="allocate-controls"><input id="fruitStatInput" type="number" min="1" step="1" value="1" aria-label="Fruit points to invest"><button id="fruitStatBuy" type="button">Invest</button></div></div>
+      <p class="panel-copy integrity">✓ Local game-state validation is active.</p>
+    </aside>
+
+    <button id="helpBtn" class="hidden" type="button" aria-haspopup="dialog" aria-controls="helpPanel" title="Controls and game guide">?</button>
+    <aside id="helpPanel" class="hidden" role="dialog" aria-label="Controls and game guide">
+      <div class="set-head"><span>ARENA GUIDE</span><button id="helpClose" type="button" aria-label="Close guide">✕</button></div>
+      <p><b>Move</b><span>WASD / arrow keys</span></p>
+      <p><b>Aim & attack</b><span>Mouse + left click</span></p>
+      <p><b>Skills</b><span>Z · X · C · V · B · F</span></p>
+      <p><b>Switch loadout</b><span>Tab (fruit ↔ sword)</span></p>
+      <p><b>Collect fruit</b><span>E near a world fruit</span></p>
+      <p><b>Tip</b><span>Equip a fruit and sword, then use Tab to swap.</span></p>
+    </aside>
 
     <!-- Crosshair -->
     <div id="crosshair" class="hidden"></div>

@@ -2,7 +2,7 @@
 //  UI: inventory slots, compact skill bar, graphics settings,
 //  HUD (hp / tokens / kills / fps), toast.
 // ============================================================
-import { INVENTORY_ITEMS, FRUITS, SWORDS, SKILL_KEYS } from './config.js';
+import { INVENTORY_ITEMS, FRUITS, SWORDS, SKILL_KEYS, FRUIT_DEALER } from './config.js';
 
 export class UI {
   constructor(game) {
@@ -17,6 +17,8 @@ export class UI {
     document.getElementById('skillbar').classList.remove('hidden');
     document.getElementById('crosshair').classList.remove('hidden');
     document.getElementById('settingsBtn').classList.remove('hidden');
+    document.getElementById('helpBtn').classList.remove('hidden');
+    document.getElementById('utilityBar').classList.remove('hidden');
     document.getElementById('loader').classList.add('hidden');
   }
 
@@ -44,7 +46,10 @@ export class UI {
     const g = this.game;
     document.querySelectorAll('#invSlots .slot').forEach((slot) => {
       const id = slot.dataset.id;
-      const isFruit = g.equippedFruit === id;
+      const item = INVENTORY_ITEMS.find((entry) => entry.id === id);
+      const unlocked = item.type !== 'fruit' || g.ownedFruits.has(id);
+      slot.classList.toggle('locked', !unlocked);
+      const isFruit = unlocked && g.equippedFruit === id;
       const isSword = g.equippedSword === id;
       const equipped = isFruit || isSword;
       slot.classList.toggle('equipped', equipped);
@@ -91,7 +96,10 @@ export class UI {
 
     const useBtn = row.querySelector('.skill-use');
     const upg = row.querySelector('.skill-upg');
-    useBtn.addEventListener('click', () => this.game.requestCast(sk.id));
+    useBtn.addEventListener('click', () => {
+      if (isM1) this.game.requestCastM1();
+      else this.game.requestCast(sk.id);
+    });
     if (upg) upg.addEventListener('click', (e) => { e.stopPropagation(); this.game.tryUpgradeDeath(); });
 
     this.skillRows[sk.id] = {
@@ -174,10 +182,48 @@ export class UI {
     document.getElementById('setClose').addEventListener('click', () => {
       document.getElementById('settingsPanel').classList.add('hidden');
     });
+    document.getElementById('helpBtn').addEventListener('click', () => {
+      document.getElementById('helpPanel').classList.toggle('hidden');
+    });
+    document.getElementById('helpClose').addEventListener('click', () => {
+      document.getElementById('helpPanel').classList.add('hidden');
+    });
 
     // skill bar close / reopen
     document.getElementById('skillClose').addEventListener('click', () => this.closeSkillBar());
     document.getElementById('skillReopen').addEventListener('click', () => this.openSkillBar());
+  }
+
+  buildProgressionPanels() {
+    document.getElementById('dealerBtn').addEventListener('click', () => { document.getElementById('dealerPanel').classList.toggle('hidden'); this.renderDealerStock(); });
+    document.getElementById('dealerClose').addEventListener('click', () => document.getElementById('dealerPanel').classList.add('hidden'));
+    document.getElementById('statsBtn').addEventListener('click', () => { document.getElementById('statsPanel').classList.toggle('hidden'); this.refreshStats(); });
+    document.getElementById('statsClose').addEventListener('click', () => document.getElementById('statsPanel').classList.add('hidden'));
+    ['health', 'fruit'].forEach((type) => document.getElementById(`${type}StatBuy`).addEventListener('click', () => this.game.allocateStat(type, document.getElementById(`${type}StatInput`).value)));
+    this.renderDealerStock(); this.refreshStats();
+  }
+
+  renderDealerStock() {
+    const stock = document.getElementById('dealerStock'); stock.innerHTML = '';
+    this.game.dealer.stock.forEach((id) => {
+      const fruit = FRUITS[id], price = FRUIT_DEALER.prices[id];
+      const card = document.createElement('button'); card.className = 'dealer-card'; card.disabled = this.game.ownedFruits.has(id);
+      card.innerHTML = `<span>${fruit.emoji}</span><b>${fruit.name}</b><small>${card.disabled ? 'Owned' : `${price.toLocaleString()} tokens`}</small>`;
+      card.addEventListener('click', () => { const result = this.game.dealer.buy(id, this.game); this.setTokens(this.game.tokens); this.refreshInventory(); this.renderDealerStock(); this.toast(result.message); });
+      stock.appendChild(card);
+    });
+  }
+
+  refreshStats() {
+    const g = this.game;
+    document.getElementById('statPoints').textContent = g.statPoints.toLocaleString();
+    document.getElementById('healthStatValue').textContent = g.stats.health.toLocaleString();
+    document.getElementById('fruitStatValue').textContent = g.stats.fruit.toLocaleString();
+  }
+
+  updateProgression() {
+    const seconds = Math.max(0, Math.ceil(this.game.dealer.remaining));
+    document.getElementById('stockTimer').textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   }
 
   closeSkillBar() {
@@ -190,7 +236,18 @@ export class UI {
   }
 
   // ---------------- HUD ----------------
-  setHp(frac) { document.getElementById('hpFill').style.width = Math.max(0, frac * 100) + '%'; }
+  setHp(frac) {
+    const bounded = Math.max(0, Math.min(1, frac));
+    document.getElementById('hpFill').style.width = bounded * 100 + '%';
+    const current = Math.round(this.game.player.hp).toLocaleString();
+    const maximum = Math.round(this.game.player.maxHp).toLocaleString();
+    document.getElementById('hpCount').textContent = `${current} / ${maximum}`;
+  }
+  setLevel(level, xp, needed) {
+    document.getElementById('levelCount').textContent = level.toLocaleString();
+    document.getElementById('xpFill').style.width = Math.max(0, Math.min(1, xp / needed)) * 100 + '%';
+    document.getElementById('xpCount').textContent = `${Math.floor(xp).toLocaleString()} / ${Math.floor(needed).toLocaleString()}`;
+  }
   setTokens(n) { document.getElementById('tokenCount').textContent = Math.floor(n); }
   setKills(n) { document.getElementById('killCount').textContent = n; }
   setFps(n) { document.getElementById('fpsCount').textContent = Math.round(n); }

@@ -25,7 +25,11 @@ export class Input {
   _bind() {
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
     window.addEventListener('keyup', (e) => this.onKeyUp(e));
-    window.addEventListener('blur', () => { this.keys.clear(); this.held = {}; });
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.game.cancelHeldSkills();
+      this.held = {};
+    });
 
     if (!this.isMobile) {
       window.addEventListener('mousemove', (e) => this._setNDC(e.clientX, e.clientY));
@@ -63,6 +67,7 @@ export class Input {
     const k = e.key.toLowerCase();
     this.keys.add(k);
     if (k === 'tab') { e.preventDefault(); this.game.toggleWeapon(); return; }
+    if (k === 'e') { this.game.collectFruit(); return; }
     if (k === 'c' && e.ctrlKey === false) { /* reserved */ }
     if (k === 'escape') { document.getElementById('settingsPanel').classList.add('hidden'); }
 
