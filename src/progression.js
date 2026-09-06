@@ -1,10 +1,8 @@
 // ============================================================
-// Fruit dealer, physical world spawns, and local state guard.
-// Authoritative validation belongs on a server in a multiplayer build;
-// this guard keeps this standalone browser demo recoverable and stable.
+// Fruit dealer, boat / armory shop, world spawns, local guard.
 // ============================================================
 import * as THREE from 'three';
-import { FRUITS, FRUIT_DEALER, FRUIT_SPAWNS } from './config.js';
+import { FRUITS, FRUIT_DEALER, FRUIT_SPAWNS, BOATS, SWORD_PRICES, SWORDS } from './config.js';
 
 const fruitIds = Object.keys(FRUITS);
 
@@ -25,6 +23,32 @@ export class FruitDealer {
   }
 }
 
+export class BoatDealer {
+  buyBoat(id, game) {
+    const def = BOATS[id];
+    if (!def) return { ok: false, message: 'Unknown vessel.' };
+    if (game.ownedBoats.has(id)) {
+      game.selectedBoat = id;
+      return { ok: true, message: `${def.name} selected. Sail from the southern dock.` };
+    }
+    if (game.tokens < def.price) return { ok: false, message: `Need ${def.price.toLocaleString()} tokens.` };
+    game.tokens -= def.price;
+    game.ownedBoats.add(id);
+    game.selectedBoat = id;
+    return { ok: true, message: `${def.name} is yours! Head to the dock and press Sail.` };
+  }
+  buySword(id, game) {
+    const def = SWORDS[id];
+    if (!def) return { ok: false, message: 'Unknown blade.' };
+    if (game.ownedSwords.has(id)) return { ok: false, message: `You already own ${def.name}.` };
+    const price = SWORD_PRICES[id];
+    if (game.tokens < price) return { ok: false, message: `Need ${price.toLocaleString()} tokens.` };
+    game.tokens -= price;
+    game.ownedSwords.add(id);
+    return { ok: true, message: `${def.name} purchased — equip it from inventory.` };
+  }
+}
+
 export class FruitSpawner {
   constructor(scene, treePoints = []) { this.scene = scene; this.treePoints = treePoints; this.active = []; this.nextSpawn = FRUIT_SPAWNS.intervalSeconds; }
   update(dt) {
@@ -37,10 +61,10 @@ export class FruitSpawner {
     if (this.active.length >= FRUIT_SPAWNS.maxActive) return;
     const id = fruitIds[(Math.random() * fruitIds.length) | 0];
     const tree = this.treePoints[(Math.random() * this.treePoints.length) | 0];
-    const angle = Math.random() * Math.PI * 2, radius = tree ? 1.5 + Math.random() * 3 : 25 + Math.random() * 105;
+    const angle = Math.random() * Math.PI * 2, radius = tree ? 1.5 + Math.random() * 3 : 12 + Math.random() * 40;
     const mesh = new THREE.Group();
-    const fruit = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 2), new THREE.MeshStandardMaterial({ color: FRUITS[id].color, emissive: FRUITS[id].color, emissiveIntensity: 1.4, roughness: 0.25, metalness: 0.25 }));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.18, 0.05, 6, 24), new THREE.MeshBasicMaterial({ color: FRUITS[id].color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending }));
+    const fruit = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 1), new THREE.MeshStandardMaterial({ color: FRUITS[id].color, emissive: FRUITS[id].color, emissiveIntensity: 1.4, roughness: 0.25, metalness: 0.25 }));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.18, 0.05, 6, 20), new THREE.MeshBasicMaterial({ color: FRUITS[id].color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending }));
     ring.rotation.x = Math.PI / 2; mesh.add(fruit, ring); mesh.position.set((tree?.x || 0) + Math.cos(angle) * radius, 1.25, (tree?.z || 0) + Math.sin(angle) * radius);
     this.scene.add(mesh); this.active.push({ id, mesh, life: FRUIT_SPAWNS.lifetimeSeconds });
   }
@@ -58,4 +82,5 @@ export function validateGameState(game) {
   game.level = Math.max(1, Math.min(100000, Math.floor(game.level) || 1));
   game.player.hp = Math.max(0, Math.min(game.player.maxHp, game.player.hp));
   if (!Number.isFinite(game.player.position.x) || !Number.isFinite(game.player.position.z)) game.player.position.set(0, 0, 0);
+  if (game.player.airJumps < 0 || game.player.airJumps > 20) game.player.airJumps = Math.max(0, Math.min(20, game.player.airJumps || 0));
 }

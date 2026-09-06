@@ -14,7 +14,6 @@
   }
   </script>
   <script>
-    // Friendly feedback if the 3D engine (Three.js) can't be fetched from the CDN.
     window.addEventListener('error', function (e) {
       var s = document.getElementById('loaderStatus');
       if (s && /three|module|import|fetch|network/i.test(String(e.message || (e.target && e.target.src) || ''))) {
@@ -29,7 +28,7 @@
     setTimeout(function () {
       var l = document.getElementById('loader');
       var s = document.getElementById('loaderStatus');
-      if (l && !l.classList.contains('hidden') && s && /Booting|engine/i.test(s.textContent)) {
+      if (l && !l.classList.contains('hidden') && s && /Booting|engine|Pre-render|Creating/i.test(s.textContent)) {
         s.textContent = 'Still loading… if this persists, your browser/network may be blocking the CDN.';
         s.style.color = '#ffd070';
       }
@@ -40,76 +39,102 @@
   <div id="app">
     <canvas id="game"></canvas>
 
-    <!-- Loading screen -->
     <div id="loader">
+      <div class="loader-orbit" aria-hidden="true">
+        <span>🪐</span><span>⚡</span><span>❄️</span><span>🔥</span><span>✨</span><span>🌋</span>
+      </div>
       <div class="loader-box">
-        <div class="loader-title">FRUIT BATTLEGROUNDS</div>
-        <div class="loader-sub">3D Arena</div>
+        <div class="loader-kicker">PRE-RENDERED ARENA</div>
+        <div class="loader-title">FRUIT<br>BATTLEGROUNDS</div>
+        <div class="loader-sub">Master fruits. Rule the seas.</div>
         <div class="loader-bar"><div class="loader-bar-fill" id="loaderFill"></div></div>
+        <div class="loader-pct" id="loaderPct">0%</div>
         <div class="loader-status" id="loaderStatus">Booting engine…</div>
+        <div class="loader-tip">Air-jump up to 20 times. Sail between islands. Spend every leftover stat point in one go.</div>
       </div>
     </div>
 
-    <!-- Top bar: stats -->
     <div id="topbar" class="hidden">
-      <div class="stat hp-stat"><span class="stat-label">HP</span><div class="hpbar"><div class="hpfill" id="hpFill"></div></div><b id="hpCount">2,000 / 2,000</b></div>
-      <div class="stat level-stat"><span class="stat-label">LVL</span><b id="levelCount">1</b><div class="xpbar" title="Experience"><div class="xpfill" id="xpFill"></div></div><b id="xpCount">0 / 100</b></div>
-      <div class="stat">Tokens: <b id="tokenCount">0</b></div>
-      <div class="stat">Kills: <b id="killCount">0</b></div>
-      <div class="stat">FPS: <b id="fpsCount">0</b></div>
+      <div class="chip"><span>LVL</span><b id="levelCount">1</b></div>
+      <div class="chip"><span>XP</span><div class="xpbar"><div class="xpfill" id="xpFill"></div></div><b id="xpCount">0 / 100</b></div>
+      <div class="chip"><span>Tokens</span><b id="tokenCount">0</b></div>
+      <div class="chip"><span>Kills</span><b id="killCount">0</b></div>
+      <div class="chip"><span>Jumps</span><b id="jumpsCount">20/20</b></div>
+      <div class="chip"><span>FPS</span><b id="fpsCount">0</b></div>
     </div>
 
-    <!-- Inventory (bottom horizontal square slots) -->
+    <div id="hpHud" class="hidden">
+      <div class="hp-wrap">
+        <span class="hp-label">HP</span>
+        <div class="hpbar">
+          <div class="hpfill" id="hpFill"></div>
+          <b id="hpCount">2,000 / 2,000</b>
+        </div>
+      </div>
+    </div>
+
     <div id="inventory" class="hidden">
-      <div class="inv-title">INVENTORY — equip / unequip fruit &amp; sword (separated)</div>
+      <div class="inv-title">LOADOUT — fruit, sword &amp; style stay separate</div>
       <div class="inv-slots" id="invSlots"></div>
-      <div class="inv-hint">Click a slot to equip / unequip. Fruit and Sword are kept apart.</div>
     </div>
 
-    <!-- Skill bar (middle right, compact, closable) -->
     <div id="skillbar" class="hidden">
       <div class="skillbar-head">
         <span id="skillbarTitle">SKILLS</span>
-        <button id="skillClose" title="Close (C)">✕</button>
+        <button id="skillClose" title="Close">✕</button>
       </div>
       <div class="skill-list" id="skillList"></div>
     </div>
     <button id="skillReopen" class="hidden" title="Open skills">⚔ Skills</button>
 
     <div id="utilityBar" class="hidden">
-      <button id="dealerBtn" type="button">🍎 Dealer</button>
+      <button id="dealerBtn" type="button">🍎 Fruit</button>
+      <button id="boatBtn" type="button">⚓ Shipwright</button>
       <button id="statsBtn" type="button">✦ Stats</button>
     </div>
+
     <aside id="dealerPanel" class="hidden" role="dialog" aria-label="Fruit dealer">
       <div class="set-head"><span>FRUIT DEALER</span><button id="dealerClose" type="button" aria-label="Close fruit dealer">✕</button></div>
       <p class="panel-copy">Limited stock refreshes in <b id="stockTimer">10:00</b>.</p>
       <div id="dealerStock" class="dealer-stock"></div>
     </aside>
+
+    <aside id="boatPanel" class="hidden" role="dialog" aria-label="Shipwright">
+      <div class="set-head"><span>SHIPWRIGHT</span><button id="boatClose" type="button" aria-label="Close shipwright">✕</button></div>
+      <p class="panel-copy">Buy a boat, walk to the southern dock, then press <b>Q</b> or Sail.</p>
+      <div id="boatStock" class="dealer-stock"></div>
+      <h4 class="panel-h">Armory</h4>
+      <div id="swordStock" class="dealer-stock swords"></div>
+    </aside>
+
     <aside id="statsPanel" class="hidden" role="dialog" aria-label="Player statistics">
       <div class="set-head"><span>COMBAT STATS</span><button id="statsClose" type="button" aria-label="Close stats">✕</button></div>
       <div class="stat-points">Available points <b id="statPoints">0</b></div>
-      <div class="stat-allocation"><div><b>❤ Health</b><span id="healthStatValue">0</span><small>+20 maximum HP per point</small></div><div class="allocate-controls"><input id="healthStatInput" type="number" min="1" step="1" value="1" aria-label="Health points to invest"><button id="healthStatBuy" type="button">Invest</button></div></div>
-      <div class="stat-allocation"><div><b>🍏 Fruit</b><span id="fruitStatValue">0</span><small>+5% fruit damage per point</small></div><div class="allocate-controls"><input id="fruitStatInput" type="number" min="1" step="1" value="1" aria-label="Fruit points to invest"><button id="fruitStatBuy" type="button">Invest</button></div></div>
-      <div class="stat-allocation"><div><b>🗡 Sword</b><span id="swordStatValue">0</span><small>Improves sword mastery</small></div><div class="allocate-controls"><input id="swordStatInput" type="number" min="1" step="1" value="1" aria-label="Sword points to invest"><button id="swordStatBuy" type="button">Invest</button></div></div>
-      <div class="stat-allocation"><div><b>🥊 Fighting</b><span id="fightingStatValue">0</span><small>Improves Combat mastery</small></div><div class="allocate-controls"><input id="fightingStatInput" type="number" min="1" step="1" value="1" aria-label="Fighting points to invest"><button id="fightingStatBuy" type="button">Invest</button></div></div>
-      <p class="panel-copy integrity">✓ Local game-state validation is active.</p>
+      <label class="stat-amount">
+        <span>Invest amount</span>
+        <input id="statAmount" type="number" min="1" step="1" value="1" aria-label="Points to invest into a stat">
+      </label>
+      <p class="panel-copy">One value for every stat. Enter more than you have and every remaining point is spent.</p>
+      <div class="stat-allocation"><div><b>❤ Health</b><span id="healthStatValue">0</span><small>+20 maximum HP per point</small></div><button id="healthStatBuy" type="button">Invest</button></div>
+      <div class="stat-allocation"><div><b>🍏 Fruit</b><span id="fruitStatValue">0</span><small>+5% fruit damage per point</small></div><button id="fruitStatBuy" type="button">Invest</button></div>
+      <div class="stat-allocation"><div><b>🗡 Sword</b><span id="swordStatValue">0</span><small>Improves sword mastery</small></div><button id="swordStatBuy" type="button">Invest</button></div>
+      <div class="stat-allocation"><div><b>🥊 Fighting</b><span id="fightingStatValue">0</span><small>Improves Combat mastery</small></div><button id="fightingStatBuy" type="button">Invest</button></div>
     </aside>
 
     <button id="helpBtn" class="hidden" type="button" aria-haspopup="dialog" aria-controls="helpPanel" title="Controls and game guide">?</button>
     <aside id="helpPanel" class="hidden" role="dialog" aria-label="Controls and game guide">
       <div class="set-head"><span>ARENA GUIDE</span><button id="helpClose" type="button" aria-label="Close guide">✕</button></div>
-      <p><b>Move</b><span>WASD / arrow keys</span></p>
-      <p><b>Aim & attack</b><span>Mouse + left click</span></p>
+      <p><b>Move</b><span>WASD / joystick</span></p>
+      <p><b>Jump</b><span>Space · 20 air jumps</span></p>
+      <p><b>Aim &amp; attack</b><span>Mouse + left click</span></p>
       <p><b>Skills</b><span>Z · X · C · V · B · F</span></p>
-      <p><b>Switch loadout</b><span>Tab (fruit ↔ sword)</span></p>
+      <p><b>Sail</b><span>Q at the southern dock</span></p>
+      <p><b>Switch loadout</b><span>Tab</span></p>
       <p><b>Collect fruit</b><span>E near a world fruit</span></p>
-      <p><b>Tip</b><span>Equip a fruit and sword, then use Tab to swap.</span></p>
     </aside>
 
-    <!-- Crosshair -->
     <div id="crosshair" class="hidden"></div>
 
-    <!-- Graphics settings -->
     <button id="settingsBtn" class="hidden" title="Graphics Settings">⚙</button>
     <div id="settingsPanel" class="hidden">
       <div class="set-head">
@@ -119,7 +144,14 @@
       <div class="set-body" id="setBody"></div>
     </div>
 
-    <!-- Toast / hint -->
+    <div id="joyWrap" class="hidden">
+      <div id="joystick" aria-label="Move">
+        <div id="joyKnob"></div>
+      </div>
+    </div>
+    <button id="jumpBtn" class="hidden" type="button">JUMP<b id="jumpBtnCount">20</b></button>
+    <button id="sailBtn" class="hidden" type="button">SAIL</button>
+
     <div id="toast" class="hidden"></div>
   </div>
 

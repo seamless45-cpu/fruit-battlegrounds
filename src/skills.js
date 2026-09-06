@@ -22,8 +22,17 @@ function nearPoint(center, radius) {
   return V(center.x + Math.cos(a) * r, center.z + Math.sin(a) * r);
 }
 function randomArena() {
-  const a = Math.random() * Math.PI * 2, r = Math.random() * 120;
+  const a = Math.random() * Math.PI * 2, r = Math.random() * 70;
   return V(Math.cos(a) * r, Math.sin(a) * r);
+}
+function blast(game, x, z, r, dmgPct, color, extra = {}) {
+  game.fx.explosion({ x, z, radius: r, color, life: 0.5, debris: 5, intensity: 1.1 });
+  return game.enemies.applyArea(V(x, z), r, DMG(dmgPct), extra);
+}
+function aimDir(player, aim) {
+  const dir = aim.clone().sub(player.position); dir.y = 0;
+  if (dir.lengthSq() < 0.01) dir.set(Math.sin(player.facing), 0, Math.cos(player.facing));
+  return dir.normalize();
 }
 
 // ------------------------------------------------------------
@@ -138,28 +147,11 @@ const handlers = {
   // ================= LIGHTNING FRUIT =================
   l_bestia(game, aim) {
     const { fx, enemies, player } = game;
-    const from = player.position.clone();
-    // auto-aim nearest enemy in front, else aim point
     const near = enemies.randomNearby(player.position, 200, 1);
     const to = near.length ? near[0].position.clone() : aim.clone();
-    to.y = 1.5; from.y = 1.5;
-    const beast = new THREE.Mesh(new THREE.ConeGeometry(0.8, 2.4, 8),
-      new THREE.MeshBasicMaterial({ color: BLUE, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
-    beast.position.copy(from); beast.lookAt(to); game.scene.add(beast);
-    const dir = to.clone().sub(from).normalize();
-    let t = 0; const speed = 20;
-    fx.add({
-      update: (dt) => {
-        t += dt; beast.position.addScaledVector(dir, speed * dt); beast.rotation.z += dt * 10;
-        // hit?
-        const hit = enemies.alive().find((e) => e.position.distanceTo(beast.position) < 2.5);
-        if (hit || beast.position.distanceTo(to) < 1.5 || t > 8) {
-          fx.explosion({ x: beast.position.x, z: beast.position.z, radius: 3, color: BLUE, life: 0.5, debris: 4 });
-          enemies.applyArea(beast.position, 3, DMG(0.35), { stun: true, stunDur: 0.8 });
-          game.scene.remove(beast); return false;
-        }
-        return true;
-      }, dispose() {}
+    fx.launchOrb(player.position.clone(), to.sub(player.position), {
+      speed: 28, range: 160, color: BLUE, radius: 1.1, enemies,
+      onExplode: (p) => enemies.applyArea(p, 3, DMG(0.35), { stun: true, stunDur: 0.8 }),
     });
   },
 
@@ -238,7 +230,7 @@ const handlers = {
   l_masalla(game, aim) {
     const { fx, enemies, player } = game;
     const c = aim.clone();
-    for (let i = 0; i < 120; i++) game.after(i * 0.1, () => {
+    for (let i = 0; i < 40; i++) game.after(i * 0.12, () => {
       const rp = randomArena();
       fx.bolt({ x: rp.x, z: rp.z, height: 36, color: BLUE, life: 0.22, branches: 1 });
       enemies.applyArea(V(rp.x, rp.z), 16, DMG(0.1), { stun: true, stunDur: 3 });
@@ -268,26 +260,12 @@ const handlers = {
 
   q_air(game, aim) {
     const { fx, enemies, player } = game;
-    const dir = aim.clone().sub(player.position); dir.y = 0;
-    if (dir.lengthSq() < 0.01) dir.set(Math.sin(player.facing), 0, Math.cos(player.facing));
-    dir.normalize();
-    const orb = new THREE.Mesh(new THREE.SphereGeometry(1.4, 16, 12),
-      new THREE.MeshStandardMaterial({ color: QUAKE, emissive: 0x114a88, emissiveIntensity: 0.9, transparent: true, opacity: 0.85 }));
-    orb.position.copy(player.position); orb.position.y = 1.5; game.scene.add(orb);
-    let d = 0;
-    fx.add({
-      update: (dt) => {
-        d += 40 * dt; orb.position.addScaledVector(dir, 40 * dt);
-        orb.rotation.y += dt * 6;
-        const hit = enemies.alive().find((e) => e.position.distanceTo(orb.position) < 2.5);
-        if (hit || d > 120) {
-          fx.explosion({ x: orb.position.x, z: orb.position.z, radius: 8, color: QUAKE, life: 0.6, debris: 6 });
-          fx.shockwave({ x: orb.position.x, z: orb.position.z, radius: 8, color: 0xffffff, duration: 0.6, debrisCount: 6 });
-          enemies.applyArea(orb.position, 8, DMG(0.4), { stun: true, stunDur: 2 });
-          game.scene.remove(orb); return false;
-        }
-        return true;
-      }, dispose() {}
+    fx.launchOrb(player.position.clone(), aimDir(player, aim), {
+      speed: 40, range: 120, color: QUAKE, radius: 1.4, enemies,
+      onExplode: (p) => {
+        fx.shockwave({ x: p.x, z: p.z, radius: 8, color: 0xffffff, duration: 0.6, debrisCount: 6 });
+        enemies.applyArea(p, 8, DMG(0.4), { stun: true, stunDur: 2 });
+      },
     });
   },
 
@@ -357,37 +335,15 @@ const handlers = {
 
   gb_pilmae(game) {
     const { fx, enemies, player } = game;
-    const follow = player.position.clone();
-    const rocks = [];
-    for (let i = 0; i < 72; i++) {
-      const rp = nearPoint(follow, 22);
-      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.4, 0),
-        new THREE.MeshStandardMaterial({ color: 0x9a9aa6, roughness: 1, flatShading: true }));
-      rock.position.set(rp.x, -2, rp.z); game.scene.add(rock); rocks.push(rock);
+    for (let i = 0; i < 12; i++) {
+      const rp = nearPoint(player.position, 18);
+      game.after(i * 0.06, () => {
+        fx.rockRise({
+          x: rp.x, z: rp.z, radius: 5, rise: 0.45, color: 0x9a9aa6,
+          onSlam: (x, z) => enemies.applyArea(V(x, z), 8, DMG(0.22), { stun: true, stunDur: 0.8 }),
+        });
+      });
     }
-    let t = 0, slamIdx = 0;
-    fx.add({
-      update: (dt) => {
-        t += dt;
-        if (t < 1.2) {
-          rocks.forEach((r, i) => { const k = Math.min(1, (t) / 1.2); r.position.y = -2 + k * 4 + (i % 3); });
-          return true;
-        }
-        // slam one by one 0.06s
-        if (slamIdx < rocks.length) {
-          const r = rocks[slamIdx];
-          if (!r._done) {
-            r._done = true;
-            fx.explosion({ x: r.position.x, z: r.position.z, radius: 8, color: PURPLE, life: 0.5, debris: 4 });
-            enemies.applyArea(V(r.position.x, r.position.z), 8, DMG(0.25), { stun: true, stunDur: 1 });
-          }
-          slamIdx += 1;
-          return true;
-        }
-        rocks.forEach((r) => game.scene.remove(r));
-        return false;
-      }, dispose() {}
-    });
   },
 
   gb_death(game) {
@@ -433,16 +389,12 @@ const handlers = {
   // ================= POLE =================
   p_asalto(game, aim) {
     const { fx, enemies, player } = game;
-    const dir = aim.clone().sub(player.position); dir.y = 0;
-    if (dir.lengthSq() < 0.01) dir.set(Math.sin(player.facing), 0, Math.cos(player.facing));
-    dir.normalize();
-    const cloud = new THREE.Mesh(new THREE.SphereGeometry(1.6, 12, 10),
-      new THREE.MeshBasicMaterial({ color: BLUE, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }));
-    cloud.position.copy(player.position).addScaledVector(dir, 12); cloud.position.y = 2; game.scene.add(cloud);
+    const dir = aimDir(player, aim);
+    const pos = player.position.clone().addScaledVector(dir, 12);
+    fx._flash(fx.glow, pos.x, 2, pos.z, BLUE, 3, 1.0, 0.2);
     game.after(1.0, () => {
-      fx.explosion({ x: cloud.position.x, z: cloud.position.z, radius: 2, color: BLUE, life: 0.5, debris: 3 });
-      enemies.applyArea(V(cloud.position.x, cloud.position.z), 2, DMG(0.3), { stun: true, stunDur: 1 });
-      game.scene.remove(cloud);
+      fx.explosion({ x: pos.x, z: pos.z, radius: 2, color: BLUE, life: 0.5, debris: 3 });
+      enemies.applyArea(V(pos.x, pos.z), 2, DMG(0.3), { stun: true, stunDur: 1 });
     });
   },
 
@@ -458,25 +410,12 @@ const handlers = {
 
   bi_ball(game, aim) {
     const { fx, enemies, player } = game;
-    const dir = aim.clone().sub(player.position); dir.y = 0;
-    if (dir.lengthSq() < 0.01) dir.set(Math.sin(player.facing), 0, Math.cos(player.facing));
-    dir.normalize();
+    const dir = aimDir(player, aim);
     for (let i = 0; i < 3; i++) game.after(i * 0.12, () => {
-      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 10),
-        new THREE.MeshStandardMaterial({ color: QUAKE, emissive: 0x114a88, emissiveIntensity: 0.9 }));
-      orb.position.copy(player.position); orb.position.y = 1.5; game.scene.add(orb);
-      let d = 0; const odir = dir.clone().add(new THREE.Vector3(rand(-0.3, 0.3), 0, rand(-0.3, 0.3))).normalize();
-      fx.add({
-        update: (dt) => {
-          d += 45 * dt; orb.position.addScaledVector(odir, 45 * dt);
-          const hit = enemies.alive().find((e) => e.position.distanceTo(orb.position) < 2.2);
-          if (hit || d > 100) {
-            fx.explosion({ x: orb.position.x, z: orb.position.z, radius: 6, color: QUAKE, life: 0.5, debris: 5 });
-            enemies.applyArea(orb.position, 6, DMG(0.3), { stun: true, stunDur: 1.5 });
-            game.scene.remove(orb); return false;
-          }
-          return true;
-        }, dispose() {}
+      const odir = dir.clone().add(new THREE.Vector3(rand(-0.3, 0.3), 0, rand(-0.3, 0.3))).normalize();
+      fx.launchOrb(player.position.clone(), odir, {
+        speed: 45, range: 100, color: QUAKE, radius: 0.9, enemies,
+        onExplode: (p) => enemies.applyArea(p, 6, DMG(0.3), { stun: true, stunDur: 1.5 }),
       });
     });
   },
@@ -490,6 +429,238 @@ const handlers = {
     });
     fx.shake(0.5, 1.5);
   },
+
+  ice_spear(game, aim) {
+    const { fx, enemies, player } = game;
+    fx.launchOrb(player.position.clone(), aimDir(player, aim), {
+      speed: 52, range: 90, color: 0x9fe9ff, radius: 0.9, enemies,
+      onExplode: (p) => blast(game, p.x, p.z, 5, 0.4, 0x9fe9ff, { stun: true, stunDur: 1.4 }),
+    });
+  },
+  ice_age(game) {
+    const { fx, enemies, player } = game;
+    fx.frost(player.position.x, player.position.z, 18, 0x9fe9ff);
+    enemies.applyArea(player.position, 18, DMG(0.45), { stun: true, stunDur: 2.8 });
+    fx.shake(0.5, 1.6);
+  },
+  ice_path(game, aim) {
+    const { fx, player } = game;
+    const dir = aimDir(player, aim);
+    for (let i = 1; i <= 6; i++) game.after(i * 0.08, () => {
+      const x = player.position.x + dir.x * i * 5, z = player.position.z + dir.z * i * 5;
+      fx.frost(x, z, 5, 0xb8f4ff);
+      blast(game, x, z, 5, 0.2, 0x9fe9ff, { stun: true, stunDur: 0.7 });
+    });
+  },
+  ice_glacier(game, aim) {
+    const { fx } = game;
+    fx.rockRise({ x: aim.x, z: aim.z, radius: 10, rise: 0.8, color: 0xcfefff,
+      onSlam: (x, z) => { fx.frost(x, z, 16); blast(game, x, z, 16, 0.7, 0x9fe9ff, { stun: true, stunDur: 2 }); } });
+  },
+
+  fl_fist(game) {
+    const { fx, player } = game;
+    const p = player.position;
+    fx.slashFx(p.x, 1.8, p.z, 0xff6a2e, player.facing);
+    blast(game, p.x + Math.sin(player.facing) * 4, p.z + Math.cos(player.facing) * 4, 7, 0.4, 0xff6a2e, { burn: true, burnDps: DMG(0.08), burnDur: 4 });
+  },
+  fl_ball(game, aim) {
+    const { fx, enemies, player } = game;
+    fx.launchOrb(player.position.clone(), aimDir(player, aim), {
+      speed: 38, range: 100, color: 0xff6a2e, radius: 1.2, enemies,
+      onExplode: (p) => blast(game, p.x, p.z, 7, 0.35, 0xff6a2e, { burn: true, burnDps: DMG(0.06), burnDur: 5 }),
+    });
+  },
+  fl_pillar(game) {
+    const { fx, player } = game;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const x = player.position.x + Math.cos(a) * 8, z = player.position.z + Math.sin(a) * 8;
+      fx.pillar({ x, z, height: 22, color: 0xff6a2e, duration: 1.1, rings: 4 });
+      blast(game, x, z, 6, 0.28, 0xff6a2e, { burn: true, burnDps: DMG(0.05), burnDur: 4 });
+    }
+  },
+  fl_meteor(game, aim) {
+    const { fx, enemies } = game;
+    fx.meteor({ x: aim.x, z: aim.z, radius: 12, color: 0xff4a1a, explosionColor: 0xff6a2e, fallTime: 0.7,
+      onImpact: (x, z, r) => {
+        enemies.applyArea(V(x, z), r, DMG(0.65), { burn: true, burnDps: DMG(0.1), burnDur: 6 });
+        fx.firepit({ x, z, radius: r * 0.6, duration: 6, dps: DMG(0.04), color: 0xff5a1e }, (px, pz, pr, d) => enemies.applyArea(V(px, pz), pr, d, {}));
+      } });
+  },
+
+  li_kick(game, aim) {
+    const { fx, enemies, player } = game;
+    const dir = aimDir(player, aim);
+    let moved = 0; const dist = 16;
+    fx.add({
+      update: (dt) => {
+        const s = Math.min(260 * dt, dist - moved); moved += s;
+        player.position.addScaledVector(dir, s);
+        enemies.alive().forEach((e) => { if (e.position.distanceTo(player.position) < 2.8) enemies.damage(e, DMG(0.32), { knockDir: dir, knockForce: 14 }); });
+        fx.slashFx(player.position.x, 1.8, player.position.z, 0xfff1a8, player.facing);
+        return moved < dist;
+      }, dispose() {},
+    });
+  },
+  li_beam(game, aim) {
+    const { fx, enemies, player } = game;
+    const dir = aimDir(player, aim);
+    for (let i = 1; i <= 10; i++) {
+      const x = player.position.x + dir.x * i * 4, z = player.position.z + dir.z * i * 4;
+      fx._flash(fx.glow, x, 1.6, z, 0xfff1a8, 3.5, 0.28, 0.4);
+      enemies.applyArea(V(x, z), 3.2, DMG(0.16), { blind: true, blindDur: 1.5 });
+    }
+  },
+  li_jewels(game, aim) {
+    const { fx } = game;
+    for (let i = 0; i < 10; i++) game.after(i * 0.08, () => {
+      const rp = nearPoint(aim, 12);
+      fx._flash(fx.sparks, rp.x, 8, rp.z, 0xfff1a8, 2, 0.4, 2);
+      blast(game, rp.x, rp.z, 4.5, 0.18, 0xfff1a8, { stun: true, stunDur: 0.5 });
+    });
+  },
+  li_flash(game) {
+    const { fx, enemies, player, shade } = game;
+    shade(0xfff6c8, 0.35, true);
+    fx.explosion({ x: player.position.x, z: player.position.z, radius: 20, color: 0xfff1a8, life: 0.6, debris: 8, intensity: 1.5 });
+    enemies.applyArea(player.position, 20, DMG(0.5), { blind: true, blindDur: 4, stun: true, stunDur: 1.2 });
+    fx.shake(0.7, 2);
+  },
+
+  mg_fist(game) {
+    const { player } = game;
+    const dir = new THREE.Vector3(Math.sin(player.facing), 0, Math.cos(player.facing));
+    const x = player.position.x + dir.x * 4, z = player.position.z + dir.z * 4;
+    blast(game, x, z, 8, 0.42, 0xff3b1a, { knockDir: dir, knockForce: 16, burn: true, burnDps: DMG(0.07), burnDur: 5 });
+  },
+  mg_pool(game, aim) {
+    const { fx, enemies } = game;
+    fx.firepit({ x: aim.x, z: aim.z, radius: 10, duration: 8, dps: DMG(0.08), color: 0xff3b1a },
+      (px, pz, pr, d) => enemies.applyArea(V(px, pz), pr, d, { burn: true, burnDps: DMG(0.04), burnDur: 3 }));
+    blast(game, aim.x, aim.z, 8, 0.3, 0xff3b1a, {});
+  },
+  mg_volcano(game) {
+    const { fx, enemies, player } = game;
+    fx.pillar({ x: player.position.x, z: player.position.z, height: 36, color: 0xff3b1a, duration: 1.4, rings: 5 });
+    fx.shockwave({ x: player.position.x, z: player.position.z, radius: 16, color: 0xff7a3a, duration: 0.8, debrisCount: 8 });
+    enemies.applyArea(player.position, 16, DMG(0.55), { knockForce: 12, burn: true, burnDps: DMG(0.08), burnDur: 5 });
+    fx.shake(0.8, 2.4);
+  },
+  mg_rain(game) {
+    const { fx, enemies } = game;
+    for (let i = 0; i < 8; i++) game.after(i * 0.16, () => {
+      const rp = randomArena();
+      fx.meteor({ x: rp.x, z: rp.z, radius: 7, color: 0x6a2010, explosionColor: 0xff3b1a, fallTime: 0.55,
+        onImpact: (x, z, r) => enemies.applyArea(V(x, z), r, DMG(0.28), { burn: true, burnDps: DMG(0.05), burnDur: 4 }) });
+    });
+  },
+
+  ct_wave(game, aim) {
+    const { fx, enemies, player } = game;
+    const dir = aimDir(player, aim);
+    fx.slashFx(player.position.x, 1.7, player.position.z, 0xd4af70, player.facing);
+    fx.launchOrb(player.position.clone(), dir, {
+      speed: 48, range: 70, color: 0xd4af70, radius: 1.1, enemies,
+      onExplode: (p) => enemies.applyArea(V(p.x, p.z), 5, DMG(0.32), { knockDir: dir, knockForce: 12 }),
+    });
+  },
+  ct_flurry(game) {
+    const { fx, enemies, player } = game;
+    for (let i = 0; i < 6; i++) game.after(i * 0.07, () => {
+      fx.slashFx(player.position.x, 1.7, player.position.z, 0xd4af70, player.facing + i * 0.5);
+      enemies.applyArea(player.position, 6, DMG(0.12), {});
+    });
+  },
+
+  ka_iai(game, aim) {
+    const { fx, enemies, player } = game;
+    const dir = aimDir(player, aim);
+    const from = player.position.clone();
+    player.position.addScaledVector(dir, 18);
+    fx.slashFx(from.x, 1.8, from.z, 0xe8eefc, player.facing);
+    enemies.alive().forEach((e) => {
+      const to = e.position.clone().sub(from); const d = to.length();
+      if (d < 20 && to.normalize().dot(dir) > 0.55) enemies.damage(e, DMG(0.55), { stun: true, stunDur: 0.8 });
+    });
+  },
+  ka_petal(game) {
+    const { fx, player } = game;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      fx.slashFx(player.position.x + Math.cos(a) * 2, 1.7, player.position.z + Math.sin(a) * 2, 0xe8eefc, a);
+    }
+    blast(game, player.position.x, player.position.z, 8, 0.4, 0xe8eefc, { stun: true, stunDur: 0.6 });
+  },
+  ka_storm(game) {
+    const { fx, enemies, player } = game;
+    let t = 0;
+    fx.add({
+      update: (dt) => {
+        t += dt;
+        enemies.pullTo(player.position, 70);
+        if (t % 0.12 < dt) {
+          fx.slashFx(player.position.x, 1.8, player.position.z, 0xe8eefc, t * 8);
+          enemies.applyArea(player.position, 9, DMG(0.1), {});
+        }
+        return t < 1.6;
+      }, dispose() {},
+    });
+  },
+
+  tr_pierce(game, aim) {
+    const { fx, enemies, player } = game;
+    const dir = aimDir(player, aim);
+    fx.launchOrb(player.position.clone(), dir, {
+      speed: 55, range: 95, color: 0x5ad0c8, radius: 0.8, enemies,
+      onExplode: (p) => enemies.applyArea(V(p.x, p.z), 4, DMG(0.38), { knockDir: dir, knockForce: 18 }),
+    });
+  },
+  tr_tide(game, aim) {
+    const { fx, enemies, player } = game;
+    const base = aimDir(player, aim);
+    for (let i = -1; i <= 1; i++) {
+      const dir = base.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), i * 0.28);
+      fx.launchOrb(player.position.clone(), dir, {
+        speed: 44, range: 80, color: 0x5ad0c8, radius: 0.7, enemies,
+        onExplode: (p) => blast(game, p.x, p.z, 4, 0.22, 0x5ad0c8, {}),
+      });
+    }
+  },
+  tr_whirl(game) {
+    const { fx, enemies, player } = game;
+    fx.shockwave({ x: player.position.x, z: player.position.z, radius: 14, color: 0x5ad0c8, duration: 1.1, debrisCount: 6 });
+    let t = 0;
+    fx.add({
+      update: (dt) => {
+        t += dt; enemies.pullTo(player.position, 90);
+        if (t % 0.2 < dt) enemies.applyArea(player.position, 12, DMG(0.12), {});
+        return t < 1.8;
+      }, dispose() {},
+    });
+  },
+
+  dk_slash(game, aim) {
+    const { fx, player } = game;
+    fx.slashFx(player.position.x, 1.8, player.position.z, 0x5b2bff, player.facing);
+    const dir = aimDir(player, aim);
+    blast(game, player.position.x + dir.x * 6, player.position.z + dir.z * 6, 9, 0.5, 0x5b2bff, { knockDir: dir, knockForce: 20, stun: true, stunDur: 1 });
+  },
+  dk_void(game) {
+    const { fx, enemies, player } = game;
+    let t = 0;
+    fx.add({
+      update: (dt) => { t += dt; enemies.pullTo(player.position, 110, { lift: true, liftDur: 0.3 }); return t < 0.7; }, dispose() {},
+    });
+    game.after(0.7, () => blast(game, player.position.x, player.position.z, 12, 0.6, 0x5b2bff, { stun: true, stunDur: 1.5 }));
+  },
+  dk_night(game) {
+    const { fx, enemies, player, shade } = game;
+    shade(0x1a0830, 0.8, true);
+    fx.pillar({ x: player.position.x, z: player.position.z, height: 40, color: 0x5b2bff, duration: 1.6, rings: 5 });
+    enemies.applyArea(player.position, 22, DMG(0.55), { blind: true, blindDur: 3, burn: true, burnDps: DMG(0.06), burnDur: 6 });
+    fx.shake(0.85, 2.8);
+  },
 };
 
 // ------------------------------------------------------------
@@ -501,15 +672,7 @@ export function castM1(game, weaponId) {
   const isCombat = weaponId === 'combat';
   game.m1Combo = (game.m1Combo || 0) + 1;
   if (game.m1Combo > 6) game.m1Combo = 1;
-  // slash visual
-  const slash = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 3.5),
-    new THREE.MeshBasicMaterial({ color: isBlade ? PURPLE : isCombat ? 0xf0b36a : BLUE, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
-  slash.position.copy(player.position); slash.position.y = 1.8;
-  slash.rotation.y = player.facing;
-  slash.position.add(new THREE.Vector3(Math.sin(player.facing) * 2, 0, Math.cos(player.facing) * 2));
-  game.scene.add(slash);
-  let t = 0;
-  fx.add({ update: (dt) => { t += dt; slash.material.opacity = 0.8 * (1 - t / 0.15); slash.scale.x = 1 + t * 4; return t < 0.15; }, dispose: () => game.scene.remove(slash) });
+  fx.slashFx(player.position.x, player.position.y + 1.8, player.position.z, isBlade ? PURPLE : isCombat ? 0xf0b36a : BLUE, player.facing);
 
   // hit enemies in front
   const fwd = new THREE.Vector3(Math.sin(player.facing), 0, Math.cos(player.facing));

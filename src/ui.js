@@ -1,28 +1,21 @@
 // ============================================================
-//  UI: inventory slots, compact skill bar, graphics settings,
-//  HUD (hp / tokens / kills / fps), toast.
+//  Reworked HUD, dealers, single-value stats, joystick chrome.
 // ============================================================
-import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER } from './config.js';
+import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES } from './config.js';
 
 export class UI {
   constructor(game) {
     this.game = game;
-    this.skillRows = {}; // id -> {row, cd, cdText, useBtn}
+    this.skillRows = {};
     this.onScreen = !game.isMobile;
   }
 
   showGameUI() {
-    document.getElementById('topbar').classList.remove('hidden');
-    document.getElementById('inventory').classList.remove('hidden');
-    document.getElementById('skillbar').classList.remove('hidden');
-    document.getElementById('crosshair').classList.remove('hidden');
-    document.getElementById('settingsBtn').classList.remove('hidden');
-    document.getElementById('helpBtn').classList.remove('hidden');
-    document.getElementById('utilityBar').classList.remove('hidden');
+    ['topbar', 'hpHud', 'inventory', 'skillbar', 'crosshair', 'settingsBtn', 'helpBtn', 'utilityBar', 'joyWrap', 'jumpBtn', 'sailBtn']
+      .forEach((id) => { const el = document.getElementById(id); if (el) el.classList.remove('hidden'); });
     document.getElementById('loader').classList.add('hidden');
   }
 
-  // ---------------- Inventory (bottom horizontal square slots) ----------------
   buildInventory() {
     const wrap = document.getElementById('invSlots');
     wrap.innerHTML = '';
@@ -60,7 +53,6 @@ export class UI {
     });
   }
 
-  // ---------------- Skill bar (middle right, compact, closable) ----------------
   buildSkillBar() {
     const list = document.getElementById('skillList');
     list.innerHTML = '';
@@ -71,9 +63,7 @@ export class UI {
       document.getElementById('skillbarTitle').textContent = 'NO WEAPON';
       return;
     }
-    document.getElementById('skillbarTitle').textContent = weapon.name.toUpperCase() + ' SKILLS';
-
-    // M1 (basic attack) for swords
+    document.getElementById('skillbarTitle').textContent = weapon.name.toUpperCase();
     if (weapon.m1) this._addSkillRow(weapon.m1, 'LMB', true);
     weapon.skills.forEach((sk, i) => this._addSkillRow(sk, (SKILL_KEYS[i] || '?').toUpperCase(), false));
   }
@@ -83,7 +73,7 @@ export class UI {
     const row = document.createElement('div');
     row.className = 'skill-row' + (isM1 ? '' : ' skill-ready');
     row.dataset.id = sk.id;
-    const metaExtra = sk.id === 'gb_death' ? `<div class="skill-upg" style="font-size:9px;color:#ffd56b;cursor:pointer;">▲ Upg Lv${this.game.upgrades.gb_death.level}</div>` : '';
+    const metaExtra = sk.id === 'gb_death' ? `<div class="skill-upg">▲ Lv${this.game.upgrades.gb_death.level}</div>` : '';
     row.innerHTML = `
       <span class="skill-key">${keyLabel}</span>
       <button class="skill-use">${isM1 ? '⚔' : '▶'}</button>
@@ -94,7 +84,6 @@ export class UI {
       <div class="skill-cd"></div>
       <div class="skill-cd-text"></div>`;
     list.appendChild(row);
-
     const useBtn = row.querySelector('.skill-use');
     const upg = row.querySelector('.skill-upg');
     useBtn.addEventListener('click', () => {
@@ -102,7 +91,6 @@ export class UI {
       else this.game.requestCast(sk.id);
     });
     if (upg) upg.addEventListener('click', (e) => { e.stopPropagation(); this.game.tryUpgradeDeath(); });
-
     this.skillRows[sk.id] = {
       row, cd: row.querySelector('.skill-cd'), cdText: row.querySelector('.skill-cd-text'),
       cdMax: sk.cd, isM1, upg,
@@ -131,10 +119,9 @@ export class UI {
 
   refreshDeathUpgrade() {
     const r = this.skillRows['gb_death'];
-    if (r && r.upg) r.upg.textContent = `▲ Upg Lv${this.game.upgrades.gb_death.level}`;
+    if (r && r.upg) r.upg.textContent = `▲ Lv${this.game.upgrades.gb_death.level}`;
   }
 
-  // ---------------- Settings (advanced graphics) ----------------
   buildSettings() {
     const body = document.getElementById('setBody');
     const gfx = this.game.world.gfx;
@@ -177,20 +164,10 @@ export class UI {
     body.appendChild(toggle('Particles', 'particles'));
     body.appendChild(slider('Resolution Scale', 'pixelRatioScale', 0.5, 1.5, 0.05));
 
-    document.getElementById('settingsBtn').addEventListener('click', () => {
-      document.getElementById('settingsPanel').classList.toggle('hidden');
-    });
-    document.getElementById('setClose').addEventListener('click', () => {
-      document.getElementById('settingsPanel').classList.add('hidden');
-    });
-    document.getElementById('helpBtn').addEventListener('click', () => {
-      document.getElementById('helpPanel').classList.toggle('hidden');
-    });
-    document.getElementById('helpClose').addEventListener('click', () => {
-      document.getElementById('helpPanel').classList.add('hidden');
-    });
-
-    // skill bar close / reopen
+    document.getElementById('settingsBtn').addEventListener('click', () => document.getElementById('settingsPanel').classList.toggle('hidden'));
+    document.getElementById('setClose').addEventListener('click', () => document.getElementById('settingsPanel').classList.add('hidden'));
+    document.getElementById('helpBtn').addEventListener('click', () => document.getElementById('helpPanel').classList.toggle('hidden'));
+    document.getElementById('helpClose').addEventListener('click', () => document.getElementById('helpPanel').classList.add('hidden'));
     document.getElementById('skillClose').addEventListener('click', () => this.closeSkillBar());
     document.getElementById('skillReopen').addEventListener('click', () => this.openSkillBar());
   }
@@ -200,8 +177,12 @@ export class UI {
     document.getElementById('dealerClose').addEventListener('click', () => document.getElementById('dealerPanel').classList.add('hidden'));
     document.getElementById('statsBtn').addEventListener('click', () => { document.getElementById('statsPanel').classList.toggle('hidden'); this.refreshStats(); });
     document.getElementById('statsClose').addEventListener('click', () => document.getElementById('statsPanel').classList.add('hidden'));
-    ['health', 'fruit', 'sword', 'fighting'].forEach((type) => document.getElementById(`${type}StatBuy`).addEventListener('click', () => this.game.allocateStat(type, document.getElementById(`${type}StatInput`).value)));
-    this.renderDealerStock(); this.refreshStats();
+    document.getElementById('boatBtn').addEventListener('click', () => { document.getElementById('boatPanel').classList.toggle('hidden'); this.renderBoatShop(); });
+    document.getElementById('boatClose').addEventListener('click', () => document.getElementById('boatPanel').classList.add('hidden'));
+    ['health', 'fruit', 'sword', 'fighting'].forEach((type) => {
+      document.getElementById(`${type}StatBuy`).addEventListener('click', () => this.game.allocateStat(type));
+    });
+    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats();
   }
 
   renderDealerStock() {
@@ -212,6 +193,33 @@ export class UI {
       card.innerHTML = `<span>${fruit.emoji}</span><b>${fruit.name}</b><small>${card.disabled ? 'Owned' : `${price.toLocaleString()} tokens`}</small>`;
       card.addEventListener('click', () => { const result = this.game.dealer.buy(id, this.game); this.setTokens(this.game.tokens); this.refreshInventory(); this.renderDealerStock(); this.toast(result.message); });
       stock.appendChild(card);
+    });
+  }
+
+  renderBoatShop() {
+    const boats = document.getElementById('boatStock'); boats.innerHTML = '';
+    Object.values(BOATS).forEach((b) => {
+      const owned = this.game.ownedBoats.has(b.id);
+      const selected = this.game.selectedBoat === b.id;
+      const card = document.createElement('button');
+      card.className = 'dealer-card' + (selected ? ' selected' : '');
+      card.innerHTML = `<span>${b.emoji}</span><b>${b.name}</b><small>${owned ? (selected ? 'Selected' : 'Owned — select') : `${b.price.toLocaleString()} tokens`}</small>`;
+      card.addEventListener('click', () => {
+        const result = this.game.shipwright.buyBoat(b.id, this.game);
+        this.setTokens(this.game.tokens); this.renderBoatShop(); this.toast(result.message);
+      });
+      boats.appendChild(card);
+    });
+    const swords = document.getElementById('swordStock'); swords.innerHTML = '';
+    Object.values(SWORDS).forEach((s) => {
+      const owned = this.game.ownedSwords.has(s.id);
+      const card = document.createElement('button'); card.className = 'dealer-card'; card.disabled = owned;
+      card.innerHTML = `<span>${s.emoji}</span><b>${s.name}</b><small>${owned ? 'Owned' : `${SWORD_PRICES[s.id].toLocaleString()} tokens`}</small>`;
+      card.addEventListener('click', () => {
+        const result = this.game.shipwright.buySword(s.id, this.game);
+        this.setTokens(this.game.tokens); this.refreshInventory(); this.renderBoatShop(); this.toast(result.message);
+      });
+      swords.appendChild(card);
     });
   }
 
@@ -238,7 +246,6 @@ export class UI {
     document.getElementById('skillReopen').classList.add('hidden');
   }
 
-  // ---------------- HUD ----------------
   setHp(frac) {
     const bounded = Math.max(0, Math.min(1, frac));
     document.getElementById('hpFill').style.width = bounded * 100 + '%';
@@ -251,9 +258,16 @@ export class UI {
     document.getElementById('xpFill').style.width = Math.max(0, Math.min(1, xp / needed)) * 100 + '%';
     document.getElementById('xpCount').textContent = `${Math.floor(xp).toLocaleString()} / ${Math.floor(needed).toLocaleString()}`;
   }
-  setTokens(n) { document.getElementById('tokenCount').textContent = Math.floor(n); }
+  setTokens(n) { document.getElementById('tokenCount').textContent = Math.floor(n).toLocaleString(); }
   setKills(n) { document.getElementById('killCount').textContent = n; }
   setFps(n) { document.getElementById('fpsCount').textContent = Math.round(n); }
+  setJumps(n, max, onGround) {
+    const left = onGround ? max : n;
+    const el = document.getElementById('jumpsCount');
+    if (el) el.textContent = `${left}/${max}`;
+    const btn = document.getElementById('jumpBtnCount');
+    if (btn) btn.textContent = String(left);
+  }
 
   toast(msg, ms = 2200) {
     const t = document.getElementById('toast');

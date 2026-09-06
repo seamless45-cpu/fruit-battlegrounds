@@ -8,58 +8,59 @@ import { EnemyManager } from './enemy.js';
 import { FX } from './effects.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
-import { castSkill, castM1, tickHeld, releaseHeld, HOLD_SKILLS } from './skills.js';
-import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER } from './config.js';
-import { FruitDealer, FruitSpawner, validateGameState } from './progression.js';
+import { castSkill, castM1, tickHeld, releaseHeld } from './skills.js';
+import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER, BOATS } from './config.js';
+import { FruitDealer, FruitSpawner, BoatDealer, validateGameState } from './progression.js';
+import { createSwordMesh } from './models.js';
 
 const isMobile = window.matchMedia('(pointer: coarse)').matches;
 
-// ---- loader ----
 const loaderFill = document.getElementById('loaderFill');
 const loaderStatus = document.getElementById('loaderStatus');
-const setLoad = (p, msg) => { loaderFill.style.width = p + '%'; if (msg) loaderStatus.textContent = msg; };
+const loaderPct = document.getElementById('loaderPct');
+const setLoad = (p, msg) => {
+  loaderFill.style.width = p + '%';
+  if (loaderPct) loaderPct.textContent = Math.round(p) + '%';
+  if (msg) loaderStatus.textContent = msg;
+};
 
-setLoad(10, 'Creating renderer…');
+setLoad(8, 'Creating renderer…');
 const canvas = document.getElementById('game');
 const world = new World(canvas);
 
-setLoad(35, 'Building effects…');
+setLoad(28, 'Pre-rendering VFX atlas…');
 const fx = new FX(world.scene);
 fx.particles = world.gfx.particles;
 
-setLoad(55, 'Spawning player & enemies…');
-const player = new Player(world.scene);
-const enemies = new EnemyManager(world.scene, () => player, (d) => onPlayerHit(d), (e) => onKill(e));
+setLoad(48, 'Sculpting fighters…');
+const player = new Player(world.scene, world);
+const enemies = new EnemyManager(world.scene, () => player, (d) => onPlayerHit(d), (e) => onKill(e), fx);
 const dealer = new FruitDealer();
+const shipwright = new BoatDealer();
 const fruitSpawner = new FruitSpawner(world.scene, world.fruitSpawnPoints);
 
-// ---- screen flash overlay (for Fatal Destruction red shift) ----
 const flash = document.createElement('div');
 flash.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:80;opacity:0;background:#000;';
 document.getElementById('app').appendChild(flash);
 
-// ------------------------------------------------------------
-//  GAME STATE
-// ------------------------------------------------------------
 const game = {
   isMobile,
-  world, fx, player, enemies, dealer, fruitSpawner, scene: world.scene,
+  world, fx, player, enemies, dealer, shipwright, fruitSpawner, scene: world.scene,
   equippedFruit: null, equippedSword: null, equippedStyle: 'combat', activeWeapon: 'style',
   cooldowns: {},
   tokens: 0, kills: 0,
   level: 1, xp: 0, xpToNext: 100,
   statPoints: 0, stats: { health: 0, fruit: 0, sword: 0, fighting: 0 },
-  ownedFruits: new Set(), ownedSwords: new Set(),
+  ownedFruits: new Set(), ownedSwords: new Set(), ownedBoats: new Set(), selectedBoat: null,
   dashCharges: 3, dashTimer: 0,
   held: {}, chargeT: 0, heldStart: 0,
   m1Combo: 0, endLag: 0,
   swordGlow: 0,
   upgrades: { gb_super: { charge: 0 }, gb_death: { level: 1 } },
   invItems: INVENTORY_ITEMS,
-  // helpers used by skills.js
   after(sec, cb) { let t = 0; fx.add({ update: (dt) => { t += dt; if (t >= sec) { cb(); return false; } return true; }, dispose() {} }); },
   aimPoint() { return input.aimPoint(new THREE.Vector3()); },
-  enemyPct(p) { return 0; }, // unused placeholder
+  enemyPct() { return 0; },
   shade(hex, sec, deep = false) {
     flash.style.background = '#' + (hex >>> 0).toString(16).padStart(6, '0');
     flash.style.transition = 'none';
@@ -69,9 +70,11 @@ const game = {
 };
 
 game.allocateStat = (type, rawAmount) => {
-  const amount = Math.floor(Number(rawAmount));
-  if (!Number.isSafeInteger(amount) || amount < 1) return ui.toast('Enter a whole number of points.');
-  if (amount > game.statPoints) return ui.toast(`Only ${game.statPoints} stat points are available.`);
+  if (rawAmount == null) rawAmount = document.getElementById('statAmount')?.value;
+  let amount = Math.floor(Number(rawAmount));
+  if (!Number.isFinite(amount) || amount < 1) amount = 1;
+  if (game.statPoints <= 0) return ui.toast('No stat points available.');
+  if (amount > game.statPoints) amount = game.statPoints;
   game.statPoints -= amount; game.stats[type] += amount;
   if (type === 'health') {
     player.maxHp = PLAYER.maxHp + game.stats.health * 20 + (game.level - 1) * 45;
@@ -93,21 +96,24 @@ game.collectFruit = () => {
   game.ownedFruits.add(id); ui.refreshInventory(); ui.toast(`Found ${FRUITS[id].emoji} ${FRUITS[id].name}!`);
 };
 
-// ------------------------------------------------------------
-//  Equip / weapon logic
-// ------------------------------------------------------------
-function makeSwordMesh(color) {
-  const g = new THREE.Group();
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.18, 3.2, 0.5),
-    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.5, metalness: 0.6, roughness: 0.3 }));
-  blade.position.y = 1.6; g.add(blade);
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.18, 0.18),
-    new THREE.MeshStandardMaterial({ color: 0x222233, metalness: 0.8, roughness: 0.4 }));
-  guard.position.y = 0.1; g.add(guard);
-  const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.9, 8),
-    new THREE.MeshStandardMaterial({ color: 0x3a2a1a }));
-  hilt.position.y = -0.45; g.add(hilt);
-  return g;
+game.toggleSail = () => {
+  if (player.mountedBoat) {
+    player.dismountBoat();
+    ui.toast('You hop off the boat.');
+    return;
+  }
+  const id = game.selectedBoat;
+  if (!id) return ui.toast('Buy a boat from the Shipwright, then sail from the southern dock.');
+  const onLand = world.isOnLand(player.position.x, player.position.z);
+  if (onLand && !world.nearDock(player.position)) return ui.toast('Go to the southern dock to set sail.');
+  player.mountBoat(game.shipwright && { ...null });
+  const def = (awaitBoat(id));
+  player.mountBoat(def);
+  ui.toast(`Sailing the ${def.name}! Jump or press Q to hop off.`);
+};
+
+function awaitBoat(id) {
+  return { raft: { id: 'raft', name: 'Raft', speed: 20, color: 0xc4a574 }, dinghy: { id: 'dinghy', name: 'Dinghy', speed: 28, color: 0xd8c8a0 }, sloop: { id: 'sloop', name: 'Sloop', speed: 38, color: 0x8ab4ff }, galleon: { id: 'galleon', name: 'Galleon', speed: 50, color: 0xc9a227 } }[id];
 }
 
 function activeWeaponDef() {
@@ -129,7 +135,7 @@ function applyEquipVisuals() {
   player.setFruitColor(f ? f.color : 0x444466);
   if (game.equippedSword) {
     const s = SWORDS[game.equippedSword];
-    player.setWeaponMesh(makeSwordMesh(s.color));
+    player.setWeaponMesh(createSwordMesh(s.id, s.color));
   } else player.setWeaponMesh(null);
 }
 
@@ -137,7 +143,7 @@ game.toggleEquip = (id) => {
   const item = INVENTORY_ITEMS.find((i) => i.id === id);
   if (!item) return;
   if (item.type === 'fruit' && !game.ownedFruits.has(id)) { ui.toast('Buy this fruit from the dealer or find it in the arena.'); return; }
-  if (item.type === 'sword' && !game.ownedSwords.has(id)) { ui.toast('Swords must be purchased before equipping.'); return; }
+  if (item.type === 'sword' && !game.ownedSwords.has(id)) { ui.toast('Buy this sword from the Shipwright armory.'); return; }
   if (item.type === 'style') { game.equippedStyle = id; game.activeWeapon = 'style'; game.refreshCombatBonus(); initCooldowns(); ui.buildSkillBar(); ui.refreshInventory(); return; }
   if (item.type === 'fruit') {
     if (game.equippedFruit === id) { game.equippedFruit = null; if (game.activeWeapon === 'fruit') game.activeWeapon = game.equippedSword ? 'sword' : 'style'; }
@@ -187,7 +193,6 @@ game.requestCastM1 = () => {
   if (!weapon || !weapon.m1) return;
   const cd = game.cooldowns[weapon.m1.id];
   if (!cd || cd.remaining > 0 || game.endLag > 0) return;
-  const aim = game.aimPoint();
   castM1(game, weapon.id);
   cd.remaining = weapon.m1.cd;
 };
@@ -216,15 +221,19 @@ game.tryUpgradeDeath = () => {
   ui.toast(`Death Slash → Lv${up.level} (cost ${Math.round(1000 * Math.pow(1.75, up.level - 1))} next)`);
 };
 
-// ------------------------------------------------------------
-//  Player hit / kill handling
-// ------------------------------------------------------------
 function onPlayerHit(dmg) {
-  if (dmg >= 0) player.damage(dmg);
-  else player.heal(-dmg);
+  if (dmg >= 0) {
+    player.damage(dmg);
+    if (dmg >= 8) fx.popup(player.position.x, player.position.y + 3.2, player.position.z, dmg, 'hurt');
+  } else {
+    player.heal(-dmg);
+    if (-dmg >= 8) fx.popup(player.position.x, player.position.y + 3.2, player.position.z, -dmg, 'heal');
+  }
   if (player.hp <= 0) {
     player.hp = player.maxHp;
-    ui.toast('You were knocked out — respawned at full HP.');
+    player.position.set(0, 0, 0);
+    player.dismountBoat();
+    ui.toast('You were knocked out — respawned at the arena.');
     fx.shake(1, 3);
   }
 }
@@ -245,43 +254,31 @@ function onKill(e) {
     game.statPoints += 3;
     leveled = true;
   }
-  // gravity blade superforce charge
   if (game.equippedSword === 'gravityblade') game.upgrades.gb_super.charge = Math.min(1, game.upgrades.gb_super.charge + 0.1);
   ui.setKills(game.kills); ui.setTokens(game.tokens);
   ui.setLevel(game.level, game.xp, game.xpToNext); ui.refreshStats();
-  if (leveled) { fx.pillar({ x: player.position.x, z: player.position.z, height: 36, color: 0xffd56b, duration: 1.2, rings: 7 }); fx.shake(0.45, 1.6); ui.toast(`LEVEL UP! You are now Lv ${game.level}. Full HP restored.`, 3000); }
+  if (leveled) { fx.pillar({ x: player.position.x, z: player.position.z, height: 36, color: 0xffd56b, duration: 1.2, rings: 5 }); fx.shake(0.45, 1.6); ui.toast(`LEVEL UP! You are now Lv ${game.level}. Full HP restored.`, 3000); }
 }
 
-// ------------------------------------------------------------
-//  Bloom toggle
-// ------------------------------------------------------------
 function applyBloom() {
   if (world.gfx.bloom && world.composer) world.render = () => world.composer.render();
   else world.render = () => world.renderer.render(world.scene, world.camera);
 }
 game.applyBloom = applyBloom;
 
-// ------------------------------------------------------------
-//  Camera follow — POSITION ONLY shake, rotation NEVER changes
-// ------------------------------------------------------------
 const camOffset = new THREE.Vector3(0, 18, 28);
 const camTarget = new THREE.Vector3();
 const _basePos = new THREE.Vector3();
 
-function updateCamera(dt) {
-  // base (unshaken) follow position
+function updateCamera() {
   _basePos.copy(player.position).add(camOffset);
   camera.position.copy(_basePos);
   camTarget.copy(player.position); camTarget.y += 2.2;
-  camera.lookAt(camTarget);              // orientation set from UN-shaken position only
-  // now apply shake to POSITION only -> rotation is left completely unchanged
+  camera.lookAt(camTarget);
   camera.position.add(fx.shakeOffset);
 }
 const camera = world.camera;
 
-// ------------------------------------------------------------
-//  Input + UI
-// ------------------------------------------------------------
 setLoad(70, 'Wiring UI & input…');
 const input = new Input(game, canvas, camera);
 const ui = new UI(game);
@@ -289,7 +286,6 @@ ui.buildInventory();
 ui.buildSettings();
 ui.buildProgressionPanels();
 
-// Everyone begins with Combat; fruits and swords are earned or purchased.
 game.equippedFruit = null;
 game.equippedSword = null;
 game.equippedStyle = 'combat';
@@ -301,21 +297,17 @@ ui.buildSkillBar();
 ui.refreshInventory();
 ui.setLevel(game.level, game.xp, game.xpToNext);
 
-// aim reticle on ground
-const reticle = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.8, 32),
+const reticle = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.8, 24),
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
 reticle.rotation.x = -Math.PI / 2; reticle.position.y = 0.05; world.scene.add(reticle);
 
 ui.showGameUI();
-setLoad(90, 'Enabling bloom…');
+setLoad(92, 'Enabling bloom…');
 tryEnableBloom(world).then(() => { applyBloom(); setLoad(100, 'Ready!'); });
 setTimeout(() => setLoad(100, 'Ready!'), 400);
 
-ui.toast('WASD move • Mouse aim • LMB attack • Z X C V B F skills • Tab switch weapon', 4200);
+ui.toast('WASD or joystick • Space jump (20 air) • LMB attack • Z–F skills • Q sail • Tab swap', 4800);
 
-// ------------------------------------------------------------
-//  Game loop
-// ------------------------------------------------------------
 let last = performance.now();
 let fpsAcc = 0, fpsCount = 0, fpsTimer = 0;
 
@@ -327,30 +319,24 @@ function loop() {
 function loopBody() {
   const now = performance.now();
   let dt = (now - last) / 1000; last = now;
-  if (dt > 0.05) dt = 0.05; // clamp
+  if (dt > 0.05) dt = 0.05;
 
-  // movement (camera-relative world dirs)
   const move = input.moveVector();
   player.update(dt, move);
 
-  // held (charge / continuous) skills
   for (const id in game.held) {
     if (game.held[id]) {
       game.chargeT = (now - game.heldStart) / 1000;
       tickHeld(game, id, dt, game.chargeT);
     }
   }
-  // safety: drop a lingering charge ball if its key was released/blurred
   if (game._ball && !game.held['l_destru']) { world.scene.remove(game._ball); game._ball = null; }
-  // end lag
   if (game.endLag > 0) game.endLag = Math.max(0, game.endLag - dt);
-  // sword glow decay
   if (game.swordGlow > 0) {
     game.swordGlow = Math.max(0, game.swordGlow - dt);
     if (player.weaponMesh) player.weaponMesh.children[0].material.emissiveIntensity = 0.5 + game.swordGlow * 3;
   }
 
-  // dash charge regen (+1 per 3s)
   game.dashTimer += dt;
   if (game.dashTimer >= 3 && game.dashCharges < 3) { game.dashCharges++; game.dashTimer = 0; }
 
@@ -358,20 +344,19 @@ function loopBody() {
   fruitSpawner.update(dt);
   if (dealer.update(dt)) { ui.renderDealerStock(); ui.toast('Fruit Dealer stock has refreshed!', 3000); }
   ui.updateProgression();
+  fx.particles = world.gfx.particles;
   fx.update(dt);
   world.update(dt, now / 1000);
   validateGameState(game);
-  updateCamera(dt);
+  updateCamera();
 
-  // reticle follows aim
   const aim = input.aimPoint(new THREE.Vector3());
   reticle.position.x = aim.x; reticle.position.z = aim.z;
 
-  // UI
   ui.updateSkillBar(dt);
   ui.setHp(player.hp / player.maxHp);
+  ui.setJumps(player.airJumps, PLAYER.maxAirJumps, player.onGround);
 
-  // fps
   fpsAcc += dt; fpsCount++; fpsTimer += dt;
   if (fpsTimer >= 0.5) { ui.setFps(fpsCount / fpsAcc); fpsAcc = 0; fpsCount = 0; fpsTimer = 0; }
 
@@ -379,5 +364,4 @@ function loopBody() {
 }
 requestAnimationFrame(loop);
 
-// expose for debugging
 window.__game = game;

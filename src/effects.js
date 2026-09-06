@@ -1,61 +1,128 @@
 // ============================================================
-//  Effects engine: explosions, debris, lightning, firepits,
-//  asteroids, meteors, tsunamis, shockwaves, camera shake.
+//  Pre-rendered VFX engine — pooled sprites, shared meshes.
 // ============================================================
 import * as THREE from 'three';
+import { bakeVfxAtlas } from './prerender.js';
+import { GEO } from './models.js';
 
-const tmpV = new THREE.Vector3();
+class Pool {
+  constructor(create, size) {
+    this.create = create;
+    this.free = [];
+    this.busy = new Set();
+    for (let i = 0; i < size; i++) this.free.push(create());
+  }
+  take() {
+    const n = this.free.pop();
+    if (!n) return null;
+    n.visible = true;
+    this.busy.add(n);
+    return n;
+  }
+  give(n) {
+    if (!n || this.free.includes(n)) return;
+    n.visible = false;
+    this.busy.delete(n);
+    this.free.push(n);
+  }
+}
+
+function spriteMat(map, additive = true) {
+  return new THREE.SpriteMaterial({
+    map, color: 0xffffff, transparent: true, depthWrite: false,
+    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+  });
+}
 
 export class FX {
-  constructor(scene, getTime) {
+  constructor(scene) {
     this.scene = scene;
-    this.updaters = [];          // {update(dt,t), dispose()} -> returns false when done
+    this.updaters = [];
     this.shakeTrauma = 0;
-    this.shakeMax = 2.2;         // max positional offset in world units
+    this.shakeMax = 2.2;
     this.shakeOffset = new THREE.Vector3();
     this._t = 0;
-    this.particles = true;   // toggled by graphics settings
+    this.particles = true;
+
+    this.atlas = bakeVfxAtlas();
+    const { glow, ring, bolt, slash, fire, spark, ice, water } = this.atlas;
+
+    const mkSpritePool = (tex, n, additive = true) => new Pool(() => {
+      const s = new THREE.Sprite(spriteMat(tex, additive));
+      s.visible = false;
+      scene.add(s);
+      return s;
+    }, n);
+
+    this.glow = mkSpritePool(glow, 48);
+    this.rings = mkSpritePool(ring, 18);
+    this.bolts = mkSpritePool(bolt, 28);
+    this.slashes = mkSpritePool(slash, 12);
+    this.fires = mkSpritePool(fire, 16);
+    this.sparks = mkSpritePool(spark, 40);
+    this.ices = mkSpritePool(ice, 16, false);
+    this.waters = mkSpritePool(water, 8);
+
+    this.rocks = new Pool(() => {
+      const m = new THREE.Mesh(GEO.ico, new THREE.MeshStandardMaterial({ color: 0x7a6a88, roughness: 1, flatShading: true }));
+      m.visible = false; scene.add(m); return m;
+    }, 14);
+
+    this.orbs = new Pool(() => {
+      const m = new THREE.Mesh(GEO.sphere, new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      m.visible = false; scene.add(m); return m;
+    }, 12);
+
+    this.nums = [];
+    for (let i = 0; i < 28; i++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128; canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      const tex = new THREE.CanvasTexture(canvas);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
+      sprite.visible = false;
+      sprite.scale.set(2.4, 1.2, 1);
+      scene.add(sprite);
+      this.nums.push({ canvas, ctx, tex, sprite, busy: false });
+    }
   }
 
-  // ---- camera shake: POSITION ONLY (no rotation ever) ----
+  add(upd) {
+    if (this.updaters.length > 150) {
+      try { upd.dispose && upd.dispose(); } catch (_) {}
+      return;
+    }
+    this.updaters.push(upd);
+  }
+
   shake(amount = 0.5, intensity = null) {
     if (intensity != null) this.shakeMax = intensity;
     this.shakeTrauma = Math.min(1, this.shakeTrauma + amount);
   }
-  // compute offset for this frame from the UN-shaken base position.
   updateShake(dt) {
     this._t += dt;
     if (this.shakeTrauma <= 0) { this.shakeOffset.set(0, 0, 0); return; }
-    const s = this.shakeTrauma * this.shakeTrauma; // square falloff
-    const f = this._t * 47;                         // high frequency
+    const s = this.shakeTrauma * this.shakeTrauma;
+    const f = this._t * 47;
     const o = this.shakeMax * s;
-    // pure positional, high-frequency random offsets on X,Y,Z only
     this.shakeOffset.set(
-      Math.sin(f * 1.0 + 12.3) * (Math.random() * 2 - 1) * o +
-        (Math.random() * 2 - 1) * o * 0.4,
-      Math.sin(f * 1.3 + 4.7) * (Math.random() * 2 - 1) * o +
-        (Math.random() * 2 - 1) * o * 0.4,
-      Math.sin(f * 0.9 + 9.1) * (Math.random() * 2 - 1) * o +
-        (Math.random() * 2 - 1) * o * 0.4
+      Math.sin(f) * o * 0.7 + (Math.random() * 2 - 1) * o * 0.3,
+      Math.sin(f * 1.3) * o * 0.5,
+      Math.cos(f * 0.9) * o * 0.7,
     );
     this.shakeTrauma = Math.max(0, this.shakeTrauma - dt * 1.6);
   }
-  // add a sustained shake for N seconds (used by roar etc.)
   shakeFor(seconds, perSecond = 0.6, intensity = null) {
     if (intensity != null) this.shakeMax = intensity;
     let left = seconds;
-    this.updaters.push({
-      update: (dt) => {
-        left -= dt;
-        this.shake(perSecond * dt, intensity);
-        return left > 0;
-      },
+    this.add({
+      update: (dt) => { left -= dt; this.shake(perSecond * dt, intensity); return left > 0; },
       dispose: () => {},
     });
   }
 
-  // generic add/remove
-  add(upd) { this.updaters.push(upd); }
   update(dt) {
     this.updateShake(dt);
     for (let i = this.updaters.length - 1; i >= 0; i--) {
@@ -71,373 +138,333 @@ export class FX {
     }
   }
 
-  // ----------------------------------------------------------
-  //  LIGHTNING  — tall vertical jagged bolt
-  // ----------------------------------------------------------
-  bolt(opts) {
-    const { x = 0, z = 0, height = 30, color = 0x9b30ff, life = 0.38,
-            thickness = 0.35, jitter = 0.9 } = opts || {};
-    const from = new THREE.Vector3(x, 0.2, z);
-    const to = new THREE.Vector3(x, height, z);
-    const group = new THREE.Group();
-    // One efficient, irregular segmented strike: no glow layers or branches.
-    const points = this._jaggedPoints(from, to, 11, jitter);
-    const geo = new THREE.BufferGeometry().setFromPoints(points);
-    const core = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.96 }));
-    group.add(core);
-    this.scene.add(group);
-    // brief light
-    const light = new THREE.PointLight(color, 3.2, height * 1.15);
-    light.position.set(x, height * 0.5, z);
-    this.scene.add(light);
-
+  _flash(pool, x, y, z, color, scale, life, grow = 1.8) {
+    const s = pool.take();
+    if (!s) return;
+    s.position.set(x, y, z);
+    s.material.color.setHex(color);
+    s.material.opacity = 1;
+    s.scale.setScalar(scale);
     let t = 0;
     this.add({
       update: (dt) => {
-        t += dt;
-        const k = 1 - t / life;
-        core.material.opacity = Math.max(0, k) * (0.7 + Math.random() * 0.3);
-        light.intensity = 3.2 * k;
+        t += dt; const k = t / life;
+        s.material.opacity = 1 - k;
+        const sc = scale * (1 + grow * k);
+        s.scale.set(sc, sc, 1);
         return t < life;
       },
-      dispose: () => { this.scene.remove(group); this.scene.remove(light); geo.dispose(); core.material.dispose(); }
+      dispose: () => pool.give(s),
     });
   }
 
-  _jaggedPoints(from, to, segs, jitter) {
-    const pts = [];
-    const dir = to.clone().sub(from);
-    const len = dir.length();
-    // perpendicular basis on x/z plane
-    for (let i = 0; i <= segs; i++) {
-      const f = i / segs;
-      const p = from.clone().lerp(to, f);
-      if (i !== 0 && i !== segs) {
-        p.x += (Math.random() * 2 - 1) * jitter * len * 0.04;
-        p.z += (Math.random() * 2 - 1) * jitter * len * 0.04;
-      }
-      pts.push(p);
-    }
-    return pts;
-  }
-  _makeBoltMesh(from, to, color, thickness, jitter, segs) {
-    return this._makeBoltMeshFromPoints(this._jaggedPoints(from, to, segs, jitter), color, thickness, jitter);
-  }
-  _makeBoltMeshFromPoints(pts, color, thickness, jitter) {
-    jitter = jitter || 0.6;
-    const curve = new THREE.CatmullRomCurve3(pts);
-    const seg = Math.max(6, pts.length * 3);
-    const geo = new THREE.TubeGeometry(curve, seg, thickness, 4, false);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
-    return new THREE.Mesh(geo, mat);
-  }
-  // mass/cheap bolts (for many at once) using lines
-  boltLine(x, z, height, color, life = 0.3) {
-    const pts = this._jaggedPoints(new THREE.Vector3(x, 0.2, z), new THREE.Vector3(x, height, z), 10, 1.0);
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
-    const line = new THREE.Line(geo, mat);
-    this.scene.add(line);
-    let t = 0;
-    this.add({ update: (dt) => { t += dt; mat.opacity = Math.max(0, 1 - t / life); return t < life; }, dispose: () => { this.scene.remove(line); geo.dispose(); } });
+  explosion(opts = {}) {
+    const { x = 0, z = 0, radius = 8, color = 0xff7a2a, life = 0.55, debris = 8, intensity = 1 } = opts;
+    this._flash(this.glow, x, 1.1, z, color, Math.max(2, radius * 0.55), life, 1.6 * intensity);
+    this._flash(this.rings, x, 0.2, z, color, Math.max(2, radius * 0.35), life * 1.1, 2.4);
+    if (debris > 0 && this.particles) this.debris(x, z, Math.min(debris, 10), color, radius * 0.45);
   }
 
-  // ----------------------------------------------------------
-  //  EXPLOSION  (sphere flash + ground ring + debris)
-  // ----------------------------------------------------------
-  explosion(opts) {
-    const { x = 0, z = 0, radius = 8, color = 0xff7a2a, life = 0.6, debris = 10, intensity = 1 } = opts || {};
-    const y = 0.4;
-    // core sphere
-    const sph = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 16, 12),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })
-    );
-    sph.position.set(x, y, z);
-    this.scene.add(sph);
-    // ground ring
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.6, 1, 40),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
-    );
-    ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.1, z);
-    this.scene.add(ring);
-    // light
-    const light = new THREE.PointLight(color, 8 * intensity, radius * 3);
-    light.position.set(x, 3, z); this.scene.add(light);
-
-    let t = 0;
-    this.add({
-      update: (dt) => {
-        t += dt; const k = t / life; const e = 1 - Math.pow(1 - k, 3);
-        const r = radius * e;
-        sph.scale.setScalar(Math.max(0.01, r));
-        sph.material.opacity = 0.9 * (1 - k);
-        ring.scale.setScalar(Math.max(0.01, r));
-        ring.material.opacity = 0.8 * (1 - k);
-        light.intensity = 8 * intensity * (1 - k);
-        return t < life;
-      },
-      dispose: () => { this.scene.remove(sph); this.scene.remove(ring); this.scene.remove(light); }
-    });
-    if (debris > 0 && this.particles) this.debris(x, z, debris, color, radius);
-  }
-
-  // debris cubes with gravity
   debris(x, z, count, color = 0xffa040, spread = 6) {
-    const group = new THREE.Group();
-    const parts = [];
-    for (let i = 0; i < count; i++) {
-      const s = 0.3 + Math.random() * 0.6;
-      const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s),
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.4, roughness: 0.8 }));
-      m.position.set(x + (Math.random() * 2 - 1) * 1.5, 1 + Math.random() * 2, z + (Math.random() * 2 - 1) * 1.5);
-      const vel = new THREE.Vector3((Math.random() * 2 - 1) * spread, 6 + Math.random() * 8, (Math.random() * 2 - 1) * spread);
-      parts.push({ m, vel }); group.add(m);
+    const n = Math.min(count, 8);
+    for (let i = 0; i < n; i++) {
+      const s = this.sparks.take();
+      if (!s) return;
+      s.position.set(x, 1.2, z);
+      s.material.color.setHex(color);
+      s.material.opacity = 1;
+      s.scale.setScalar(0.7 + Math.random() * 0.8);
+      const vel = new THREE.Vector3((Math.random() * 2 - 1) * spread, 8 + Math.random() * 7, (Math.random() * 2 - 1) * spread);
+      let t = 0; const life = 0.7 + Math.random() * 0.4;
+      this.add({
+        update: (dt) => {
+          t += dt; vel.y -= 28 * dt;
+          s.position.addScaledVector(vel, dt);
+          s.material.opacity = 1 - t / life;
+          return t < life && s.position.y > 0;
+        },
+        dispose: () => this.sparks.give(s),
+      });
     }
-    this.scene.add(group);
-    const g = -22;
-    let t = 0; const life = 2.2;
+  }
+
+  bolt(opts = {}) {
+    const { x = 0, z = 0, height = 30, color = 0x9b30ff, life = 0.32 } = opts;
+    const s = this.bolts.take();
+    if (!s) return;
+    s.position.set(x, height * 0.5, z);
+    s.material.color.setHex(color);
+    s.material.opacity = 1;
+    s.scale.set(3.2, height, 1);
+    let t = 0;
     this.add({
       update: (dt) => {
         t += dt;
-        parts.forEach((p) => {
-          p.vel.y += g * dt;
-          p.m.position.addScaledVector(p.vel, dt);
-          p.m.rotation.x += dt * 4; p.m.rotation.z += dt * 3;
-          if (p.m.position.y < s_clamp(p.m)) {} // keep
-          if (p.m.position.y < 0.2) { p.m.position.y = 0.2; p.vel.y *= -0.35; p.vel.x *= 0.6; p.vel.z *= 0.6; }
-        });
-        const k = 1 - t / life;
-        group.children.forEach((c) => { if (c.material) c.material.opacity = k; });
+        s.material.opacity = (1 - t / life) * (0.65 + Math.random() * 0.35);
+        s.scale.x = 2.4 + Math.random() * 1.6;
         return t < life;
       },
-      dispose: () => { this.scene.remove(group); }
+      dispose: () => this.bolts.give(s),
     });
+    this._flash(this.glow, x, 1.4, z, color, 3.5, life, 0.4);
   }
 
-  // ----------------------------------------------------------
-  //  FIREPIT  (persistent ground hazard, tick damage)
-  // ----------------------------------------------------------
-  firepit(opts, onTick) {
-    const { x = 0, z = 0, radius = 8, color = 0xff5a1e, duration = 10, dps = 15 } = opts || {};
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius, radius * 0.85, 0.4, 32),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })
-    );
-    mesh.position.set(x, 0.2, z);
-    this.scene.add(mesh);
-    // flame particles
-    const flames = new THREE.Group();
-    for (let i = 0; i < 10; i++) {
-      const f = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.12, radius * 0.5, 6),
-        new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }));
-      f.position.set(x + (Math.random() * 2 - 1) * radius * 0.7, 1, z + (Math.random() * 2 - 1) * radius * 0.7);
-      flames.add(f);
-    }
-    this.scene.add(flames);
-    let t = 0, tickAcc = 0;
+  boltLine(x, z, height, color, life = 0.18) {
+    this.bolt({ x, z, height, color, life });
+  }
+
+  shockwave(opts = {}) {
+    const { x = 0, z = 0, radius = 14, color = 0xbfe9ff, duration = 0.8, debrisCount = 8 } = opts;
+    this._flash(this.rings, x, 0.18, z, color, radius * 0.25, duration, 3.2);
+    if (debrisCount > 0 && this.particles) this.debris(x, z, Math.min(debrisCount, 8), color, radius * 0.3);
+  }
+
+  firepit(opts = {}, onTick) {
+    const { x = 0, z = 0, radius = 8, color = 0xff5a1e, duration = 10, dps = 15 } = opts;
+    const tick = onTick || opts.onTick;
+    const s = this.fires.take();
+    if (!s) return;
+    s.position.set(x, 1.1, z);
+    s.material.color.setHex(color);
+    s.scale.setScalar(radius * 0.7);
+    let t = 0, acc = 0;
     this.add({
       update: (dt) => {
-        t += dt; tickAcc += dt;
+        t += dt; acc += dt;
         const k = t / duration;
-        mesh.material.opacity = 0.55 * (1 - k * 0.5) * (0.7 + Math.random() * 0.3);
-        flames.children.forEach((c) => { c.scale.y = 0.6 + Math.random() * 0.8; c.position.y = 0.8 + Math.random() * 1.2; });
-        if (tickAcc >= 0.5) { tickAcc -= 0.5; if (onTick) onTick(x, z, radius, dps * 0.5); }
+        s.material.opacity = 0.75 * (1 - k * 0.4) * (0.7 + Math.random() * 0.3);
+        s.scale.setScalar(radius * (0.55 + Math.random() * 0.2));
+        if (acc >= 0.5) { acc -= 0.5; if (tick) tick(x, z, radius, dps * 0.5); }
         return t < duration;
       },
-      dispose: () => { this.scene.remove(mesh); this.scene.remove(flames); }
+      dispose: () => this.fires.give(s),
     });
   }
 
-  // ----------------------------------------------------------
-  //  ASTEROID / METEOR  (falling rock that slams + explodes)
-  // ----------------------------------------------------------
-  asteroid(opts, onImpact) {
-    const { x = 0, z = 0, radius = 25, color = 0x6b4a8a, fallFrom = 80, fallTime = 1.1, explosionColor = 0x9b30ff } = opts || {};
-    const rock = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(4 + radius * 0.12, 1),
-      new THREE.MeshStandardMaterial({ color, emissive: 0x2a1040, emissiveIntensity: 0.5, roughness: 1, flatShading: true })
-    );
-    rock.position.set(x, fallFrom, z);
-    this.scene.add(rock);
-    const glow = new THREE.PointLight(explosionColor, 4, 40); glow.position.set(x, fallFrom, z); this.scene.add(glow);
-    let t = 0;
-    this.add({
-      update: (dt) => {
-        t += dt; const k = Math.min(1, t / fallTime);
-        const ease = k * k;
-        rock.position.y = fallFrom * (1 - ease);
-        rock.rotation.x += dt * 2; rock.rotation.y += dt * 1.5;
-        glow.position.y = rock.position.y;
-        if (k >= 1) {
-          this.explosion({ x, z, radius, color: explosionColor, life: 0.8, debris: 16, intensity: 1.4 });
-          this.shake(0.9, radius * 0.06);
-          if (onImpact) onImpact(x, z, radius);
-          this.scene.remove(rock); this.scene.remove(glow);
-          return false;
-        }
-        return true;
-      },
-      dispose: () => {}
-    });
-  }
-
-  meteor(opts, onImpact) {
-    const { x = 0, z = 0, radius = 5, color = 0x7a5a9a, fallFrom = 50, fallTime = 0.5, explosionColor = 0x9b30ff } = opts || {};
-    const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(1.6, 0),
-      new THREE.MeshStandardMaterial({ color, emissive: 0x3a1060, emissiveIntensity: 0.7, roughness: 1, flatShading: true }));
-    rock.position.set(x, fallFrom, z);
-    this.scene.add(rock);
-    const trail = new THREE.PointLight(explosionColor, 3, 20); trail.position.set(x, fallFrom, z); this.scene.add(trail);
-    let t = 0;
-    this.add({
-      update: (dt) => {
-        t += dt; const k = Math.min(1, t / fallTime);
-        rock.position.y = fallFrom * (1 - k * k);
-        trail.position.y = rock.position.y;
-        if (k >= 1) {
-          this.explosion({ x, z, radius, color: explosionColor, life: 0.5, debris: 5, intensity: 1 });
-          if (onImpact) onImpact(x, z, radius);
-          this.scene.remove(rock); this.scene.remove(trail);
-          return false;
-        }
-        return true;
-      },
-      dispose: () => {}
-    });
-  }
-
-  // ----------------------------------------------------------
-  //  SHOCKWAVE  (white expanding ring + cracks + debris)
-  // ----------------------------------------------------------
-  shockwave(opts) {
-    const { x = 0, z = 0, radius = 14, color = 0xbfe9ff, duration = 0.9, debrisCount = 12 } = opts || {};
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.5, 1.4, 48),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
-    );
-    ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.15, z);
-    this.scene.add(ring);
-    // cracks (radial lines)
-    const cracks = new THREE.Group();
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      const len = radius * (0.6 + Math.random() * 0.5);
-      const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(Math.cos(a) * len, 0, Math.sin(a) * len)]);
-      const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }));
-      l.position.set(x, 0.12, z); cracks.add(l);
+  asteroid(opts = {}, onImpact) {
+    const hit = onImpact || opts.onImpact;
+    const { x = 0, z = 0, radius = 25, color = 0x6b4a8a, fallFrom = 70, fallTime = 1.0, explosionColor = 0x9b30ff } = opts;
+    const rock = this.rocks.take();
+    const glow = this.glow.take();
+    if (rock) {
+      rock.material.color.setHex(color);
+      rock.scale.setScalar(2.4 + radius * 0.08);
+      rock.position.set(x, fallFrom, z);
     }
-    this.scene.add(cracks);
-    if (debrisCount > 0 && this.particles) this.debris(x, z, debrisCount, 0xcfe8ff, radius * 0.4);
+    if (glow) { glow.position.set(x, fallFrom, z); glow.material.color.setHex(explosionColor); glow.scale.setScalar(6); }
     let t = 0;
     this.add({
       update: (dt) => {
-        t += dt; const k = t / duration; const e = 1 - Math.pow(1 - k, 2);
-        const r = radius * e;
-        ring.scale.setScalar(Math.max(0.01, r));
-        ring.material.opacity = 0.7 * (1 - k);
-        cracks.scale.setScalar(Math.max(0.01, r));
-        cracks.children.forEach((c) => c.material.opacity = 0.5 * (1 - k));
-        return t < duration;
+        t += dt; const k = Math.min(1, t / fallTime); const y = fallFrom * (1 - k * k);
+        if (rock) { rock.position.y = y; rock.rotation.x += dt * 2; rock.rotation.z += dt * 1.4; }
+        if (glow) { glow.position.y = y; glow.material.opacity = 0.7; }
+        if (k >= 1) {
+          this.explosion({ x, z, radius, color: explosionColor, life: 0.7, debris: 10, intensity: 1.3 });
+          this.shake(0.7, Math.min(4, radius * 0.05));
+          if (hit) hit(x, z, radius);
+          return false;
+        }
+        return true;
       },
-      dispose: () => { this.scene.remove(ring); this.scene.remove(cracks); }
+      dispose: () => { this.rocks.give(rock); this.glow.give(glow); },
     });
   }
 
-  // ----------------------------------------------------------
-  //  TSUNAMI  (a wall of water moving across the arena)
-  // ----------------------------------------------------------
-  tsunami(opts, onPass) {
-    const { x = 0, z = 0, dir = new THREE.Vector3(1, 0, 0), distance = 120, speed = 40, height = 10, width = 30, damage = 125, color = 0x3aa0ff } = opts || {};
-    const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(width, height, 3),
-      new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.6, emissive: 0x114a88, emissiveIntensity: 0.4, roughness: 0.3 })
-    );
-    const start = new THREE.Vector3(x, height / 2, z).addScaledVector(dir, -distance / 2);
-    wall.position.copy(start);
-    wall.lookAt(wall.position.clone().add(dir));
-    this.scene.add(wall);
+  meteor(opts = {}, onImpact) {
+    const hit = onImpact || opts.onImpact;
+    const { x = 0, z = 0, radius = 5, color = 0x7a5a9a, fallFrom = 46, fallTime = 0.5, explosionColor = 0x9b30ff } = opts;
+    const rock = this.rocks.take();
+    if (rock) { rock.material.color.setHex(color); rock.scale.setScalar(1.5); rock.position.set(x, fallFrom, z); }
+    let t = 0;
+    this.add({
+      update: (dt) => {
+        t += dt; const k = Math.min(1, t / fallTime);
+        if (rock) rock.position.y = fallFrom * (1 - k * k);
+        if (k >= 1) {
+          this.explosion({ x, z, radius, color: explosionColor, life: 0.45, debris: 4, intensity: 1 });
+          if (hit) hit(x, z, radius);
+          return false;
+        }
+        return true;
+      },
+      dispose: () => this.rocks.give(rock),
+    });
+  }
+
+  tsunami(opts = {}, onPass) {
+    const hit = onPass || opts.onPass;
+    const { x = 0, z = 0, dir = new THREE.Vector3(1, 0, 0), distance = 120, speed = 40, height = 10, width = 30, color = 0x3aa0ff } = opts;
+    const pool = this.waters.free.length ? this.waters : this.glow;
+    const s = pool.take();
+    if (!s) return;
+    const d = dir.clone();
+    if (d.lengthSq() < 0.0001) d.set(1, 0, 0);
+    d.normalize();
+    const start = new THREE.Vector3(x, height * 0.35, z).addScaledVector(d, -distance / 2);
+    s.position.copy(start);
+    s.material.color.setHex(color);
+    s.scale.set(width * 0.28, height * 0.22, 1);
+    let traveled = 0;
+    this.add({
+      update: (dt) => {
+        traveled += speed * dt;
+        s.position.copy(start).addScaledVector(d, traveled);
+        s.material.opacity = 0.75;
+        if (hit) hit(s.position.x, s.position.z, 4);
+        return traveled < distance;
+      },
+      dispose: () => pool.give(s),
+    });
+  }
+
+  rockRise(opts = {}, onSlam) {
+    const slam = onSlam || opts.onSlam;
+    const { x = 0, z = 0, radius = 6, rise = 1.2, color = 0x8a8a96 } = opts;
+    const rock = this.rocks.take();
+    if (!rock) { if (slam) slam(x, z, radius); return; }
+    rock.material.color.setHex(color);
+    rock.scale.setScalar(radius * 0.55);
+    rock.position.set(x, -radius, z);
+    let t = 0, phase = 0;
+    this.add({
+      update: (dt) => {
+        t += dt;
+        if (phase === 0) {
+          rock.position.y = -radius + (radius * 2.2) * Math.min(1, t / rise);
+          if (t >= rise) { phase = 1; t = 0; }
+          return true;
+        }
+        rock.position.y = Math.max(0.1, rock.position.y - 55 * dt);
+        if (rock.position.y <= 0.12) {
+          this.explosion({ x, z, radius: 10, color: 0x9b30ff, life: 0.55, debris: 6, intensity: 1.2 });
+          this.shake(0.55, radius * 0.08);
+          if (slam) slam(x, z, radius);
+          return false;
+        }
+        return true;
+      },
+      dispose: () => this.rocks.give(rock),
+    });
+  }
+
+  pillar(opts = {}) {
+    const { x = 0, z = 0, height = 40, color = 0x9b30ff, duration = 2, rings = 6 } = opts;
+    const col = this.glow.take();
+    if (col) {
+      col.position.set(x, height * 0.45, z);
+      col.material.color.setHex(color);
+      col.scale.set(6, height * 0.55, 1);
+    }
+    const ringSprites = [];
+    const n = Math.min(rings, 5);
+    for (let i = 0; i < n; i++) {
+      const r = this.rings.take();
+      if (!r) break;
+      r.position.set(x, 2 + i * (height / n) * 0.35, z);
+      r.material.color.setHex(color);
+      r.scale.setScalar(3 + i * 0.6);
+      ringSprites.push(r);
+    }
+    let t = 0;
+    this.add({
+      update: (dt) => {
+        t += dt; const k = t / duration;
+        if (col) col.material.opacity = 0.7 * (1 - k);
+        ringSprites.forEach((r, i) => { r.material.opacity = 0.8 * (1 - k); r.scale.setScalar((3 + i) * (1 + k * 0.4)); });
+        if (k > 0.45 && Math.random() < 0.25) this.bolt({ x, z, height: height * 0.55, color, life: 0.18 });
+        return t < duration;
+      },
+      dispose: () => { this.glow.give(col); ringSprites.forEach((r) => this.rings.give(r)); },
+    });
+  }
+
+  slashFx(x, y, z, color = 0xffffff, facing = 0) {
+    const s = this.slashes.take();
+    if (!s) return;
+    s.position.set(x + Math.sin(facing) * 1.6, y, z + Math.cos(facing) * 1.6);
+    s.material.color.setHex(color);
+    s.material.rotation = -facing;
+    s.material.opacity = 0.95;
+    s.scale.set(4.2, 2.2, 1);
+    let t = 0;
+    this.add({
+      update: (dt) => {
+        t += dt;
+        s.material.opacity = 0.95 * (1 - t / 0.16);
+        s.scale.x = 4.2 + t * 10;
+        return t < 0.16;
+      },
+      dispose: () => this.slashes.give(s),
+    });
+  }
+
+  launchOrb(from, dir, opts = {}) {
+    const { speed = 40, range = 110, color = 0xffffff, radius = 1.3, hitRadius = 2.4, enemies, onExplode } = opts;
+    const m = this.orbs.take();
+    if (!m) { if (onExplode) onExplode(from, false); return; }
+    m.material.color.setHex(color);
+    m.position.copy(from); m.position.y = (from.y || 0) + 1.5;
+    m.scale.setScalar(radius * 2);
     const d = dir.clone().normalize();
     let traveled = 0;
     this.add({
       update: (dt) => {
         traveled += speed * dt;
-        wall.position.copy(start).addScaledVector(d, traveled);
-        wall.position.y = height / 2 + Math.sin(traveled * 0.3) * 0.6;
-        if (onPass) onPass(wall.position.x, wall.position.z, 4); // damage band while passing
-        if (traveled >= distance) { this.scene.remove(wall); return false; }
-        return true;
-      },
-      dispose: () => {}
-    });
-  }
-
-  // ----------------------------------------------------------
-  //  ROCK PILLAR / PETRIFIED enemy visual
-  // ----------------------------------------------------------
-  rockRise(opts, onSlam) {
-    const { x = 0, z = 0, radius = 6, rise = 1.5, color = 0x8a8a96 } = opts || {};
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(radius, 0),
-      new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true }));
-    rock.position.set(x, -radius, z);
-    this.scene.add(rock);
-    let t = 0; let slammed = false;
-    this.add({
-      update: (dt) => {
-        t += dt;
-        if (t < rise) { rock.position.y = -radius + (radius * 2) * (t / rise); }
-        else if (!slammed) {
-          slammed = true;
-          rock.position.y = radius * 2;
-        } else {
-          rock.position.y = Math.max(0, rock.position.y - 60 * dt);
-          if (rock.position.y <= 0.1) {
-            this.explosion({ x, z, radius: 10, color: 0x9b30ff, life: 0.7, debris: 10, intensity: 1.3 });
-            this.shake(0.7, radius * 0.1);
-            if (onSlam) onSlam(x, z, radius);
-            this.scene.remove(rock);
-            return false;
-          }
+        m.position.addScaledVector(d, speed * dt);
+        m.rotation.y += dt * 8;
+        let struck = false;
+        if (enemies) struck = enemies.alive().some((e) => e.position.distanceTo(m.position) < hitRadius);
+        if (struck || traveled >= range) {
+          this.explosion({ x: m.position.x, z: m.position.z, radius: 6, color, life: 0.4, debris: 3 });
+          if (onExplode) onExplode(m.position, struck);
+          return false;
         }
         return true;
       },
-      dispose: () => {}
+      dispose: () => this.orbs.give(m),
     });
   }
 
-  // ----------------------------------------------------------
-  //  PURPLE PILLAR (grav lightning summon)
-  // ----------------------------------------------------------
-  pillar(opts) {
-    const { x = 0, z = 0, height = 40, color = 0x9b30ff, duration = 2, rings = 9 } = opts || {};
-    const group = new THREE.Group();
-    const col = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.6, height, 16, 1, true),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
-    col.position.set(x, height / 2, z); group.add(col);
-    const ringMeshes = [];
-    for (let i = 0; i < rings; i++) {
-      const r = 3 + i * 0.6;
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.25, 8, 32),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
-      ring.position.set(x, 3 + i * (height / rings), z);
-      ring.rotation.x = Math.PI / 2; group.add(ring); ringMeshes.push(ring);
-    }
-    this.scene.add(group);
-    let t = 0;
+  popup(x, y, z, amount, kind = 'hit') {
+    const n = Math.round(amount);
+    if (n < 1) return;
+    const item = this.nums.find((o) => !o.busy);
+    if (!item) return;
+    item.busy = true;
+    const { ctx, tex, sprite } = item;
+    ctx.clearRect(0, 0, 128, 64);
+    ctx.font = '700 34px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const col = kind === 'hurt' ? '#ff5a7a' : kind === 'heal' ? '#7dffb0' : kind === 'crit' ? '#ffd24a' : '#fff6e0';
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(8,6,18,0.88)';
+    const label = n.toLocaleString();
+    ctx.strokeText(label, 64, 32);
+    ctx.fillStyle = col;
+    ctx.fillText(label, 64, 32);
+    tex.needsUpdate = true;
+    sprite.position.set(x + (Math.random() - 0.5) * 0.7, y, z + (Math.random() - 0.5) * 0.7);
+    sprite.material.opacity = 1;
+    sprite.visible = true;
+    sprite.scale.set(2.4, 1.2, 1);
+    let t = 0; const life = 0.85; const oy = y;
     this.add({
       update: (dt) => {
-        t += dt; const k = t / duration;
-        group.children.forEach((c, i) => { if (c.material) c.material.opacity = (c === col ? 0.35 : 0.8) * (1 - k) * (0.7 + Math.random() * 0.3); });
-        ringMeshes.forEach((r, i) => { r.rotation.z += dt * (1 + i * 0.1); });
-        if (k > 0.6 && Math.random() < 0.4) this.bolt({ x, z, height: height * 0.6, color, life: 0.25, branches: 1 });
-        return t < duration;
+        t += dt; const k = t / life;
+        sprite.position.y = oy + k * 2.6;
+        sprite.material.opacity = 1 - k;
+        sprite.scale.set(2.4 * (1 + k * 0.25), 1.2 * (1 + k * 0.25), 1);
+        return t < life;
       },
-      dispose: () => { this.scene.remove(group); }
+      dispose: () => { item.busy = false; sprite.visible = false; },
     });
   }
-}
 
-function s_clamp() { return 0.2; }
+  frost(x, z, radius = 10, color = 0x9fe9ff) {
+    this._flash(this.ices, x, 1.4, z, color, radius * 0.5, 0.55, 1.4);
+    this.shockwave({ x, z, radius, color, duration: 0.55, debrisCount: 4 });
+  }
+}
 
 export default FX;
