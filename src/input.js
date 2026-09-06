@@ -64,8 +64,8 @@ export class Input {
         const sens = (gfx.lookSens || 1) * 0.0048;
         const ix = gfx.invertLookX ? -1 : 1;
         const iy = gfx.invertLookY ? -1 : 1;
-        this.camYaw += dx * sens * ix;
-        this.camPitch = Math.max(0.16, Math.min(1.18, this.camPitch + dy * sens * 0.82 * iy));
+        this.camYaw -= dx * sens * ix;
+        this.camPitch = Math.max(0.16, Math.min(1.18, this.camPitch - dy * sens * 0.82 * iy));
       }
       this._setNDC(e.clientX, e.clientY);
     });
@@ -173,8 +173,9 @@ export class Input {
 
   moveVector() {
     let x = this.joy.x, z = this.joy.z;
-    if (this.keys.has('w') || this.keys.has('arrowup')) z -= 1;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) z += 1;
+    if (x * x + z * z < 0.014) { x = 0; z = 0; }
+    if (this.keys.has('w') || this.keys.has('arrowup')) z += 1;
+    if (this.keys.has('s') || this.keys.has('arrowdown')) z -= 1;
     if (this.keys.has('a') || this.keys.has('arrowleft')) x -= 1;
     if (this.keys.has('d') || this.keys.has('arrowright')) x += 1;
     const fwd = new THREE.Vector3();
@@ -182,8 +183,8 @@ export class Input {
     fwd.y = 0;
     if (fwd.lengthSq() < 0.0001) fwd.set(0, 0, -1);
     fwd.normalize();
-    const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
-    const v = new THREE.Vector3().addScaledVector(fwd, -z).addScaledVector(right, x);
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const v = new THREE.Vector3().addScaledVector(fwd, z).addScaledVector(right, x);
     if (v.lengthSq() > 1) v.normalize();
     return v;
   }

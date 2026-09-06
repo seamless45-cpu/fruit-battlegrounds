@@ -34,6 +34,11 @@ export const COLORS = {
   frostfang: 0xa8e8ff,
   thunderdrum: 0xffe066,
   bloomblade: 0xff9ac8,
+  smoke: 0x9aa3b0,
+  paw: 0xf2c4a8,
+  love: 0xff6aa8,
+  rumble: 0xc9b44a,
+  dough: 0xe8c9a0,
 };
 
 export const FRUITS = {
@@ -219,6 +224,61 @@ export const FRUITS = {
       { id: 'ph_dive', label: 'Star Dive',   cd: 7,  desc: 'A flaming plunge at the aim.' },
       { id: 'ph_wing', label: 'Wing Burst',  cd: 9,  desc: 'A ring of sacred fire.' },
       { id: 'ph_nova', label: 'Rebirth',     cd: 18, desc: 'Heal and detonate in gold fire.' },
+    ],
+  },
+  smoke: {
+    id: 'smoke', name: 'Smoke', emoji: '💨', color: COLORS.smoke,
+    blurb: 'Choke the field in rolling grey clouds.',
+    rarity: 'rare',
+    skills: [
+      { id: 'sm_cloud', label: 'Haze',     cd: 3,  desc: 'A lingering smoke pit that burns lungs.' },
+      { id: 'sm_burst', label: 'Bomb',     cd: 6,  desc: 'A choking smoke detonation.' },
+      { id: 'sm_choke', label: 'Choke',    cd: 8,  desc: 'Pull foes into a stunning grey well.' },
+      { id: 'sm_veil',  label: 'Whiteout', cd: 13, desc: 'Blind the arena in a smoke veil.' },
+    ],
+  },
+  paw: {
+    id: 'paw', name: 'Paw', emoji: '🐾', color: COLORS.paw,
+    blurb: 'Beast swipes, a pounce, and a pride roar.',
+    rarity: 'epic',
+    skills: [
+      { id: 'pw_swipe',   label: 'Swipe',   cd: 2.5, desc: 'A wide claw crescent.' },
+      { id: 'pw_pounce',  label: 'Pounce',  cd: 5,   desc: 'A lunging beast tackle.' },
+      { id: 'pw_barrage', label: 'Fury',    cd: 8,   desc: 'A storm of paw strikes.' },
+      { id: 'pw_roar',    label: 'Pride',   cd: 12,  desc: 'A fear-stun roar shockwave.' },
+    ],
+  },
+  love: {
+    id: 'love', name: 'Love', emoji: '💗', color: COLORS.love,
+    blurb: 'Charm arrows, a heart bind, and a pink nova.',
+    rarity: 'epic',
+    skills: [
+      { id: 'lv_arrow', label: 'Arrow',  cd: 3,  desc: 'A homing heart that bursts on hit.' },
+      { id: 'lv_charm', label: 'Charm',  cd: 7,  desc: 'Stun nearby foes with infatuation.' },
+      { id: 'lv_heart', label: 'Pulse',  cd: 9,  desc: 'Heal yourself and blast a pink ring.' },
+      { id: 'lv_burst', label: 'Romance',cd: 15, desc: 'A wide love detonation.' },
+    ],
+  },
+  rumble: {
+    id: 'rumble', name: 'Rumble', emoji: '🥁', color: COLORS.rumble,
+    blurb: 'Drum quakes that collapse the island.',
+    rarity: 'legendary',
+    skills: [
+      { id: 'rm_drum',     label: 'Drum',     cd: 4,  desc: 'A ground-shaking beat.' },
+      { id: 'rm_quake',    label: 'Aftershock',cd: 7, desc: 'Three rolling shockwaves.' },
+      { id: 'rm_sky',      label: 'Skybeat',  cd: 10, desc: 'Call thunder onto the rhythm.' },
+      { id: 'rm_collapse', label: 'Collapse', cd: 16, desc: 'A cratering rumble nova.' },
+    ],
+  },
+  dough: {
+    id: 'dough', name: 'Dough', emoji: '🍞', color: COLORS.dough,
+    blurb: 'Stretch, trap, roll and mash the arena.',
+    rarity: 'rare',
+    skills: [
+      { id: 'dh_stretch', label: 'Stretch', cd: 2.5, desc: 'A stretching dough haymaker.' },
+      { id: 'dh_trap',    label: 'Trap',    cd: 6,   desc: 'Bind foes in sticky dough.' },
+      { id: 'dh_roll',    label: 'Roll',    cd: 7,   desc: 'Bounce slam as a dough ball.' },
+      { id: 'dh_mash',    label: 'Mash',    cd: 12,  desc: 'A crushing dough press.' },
     ],
   },
 };
@@ -459,6 +519,11 @@ export const INVENTORY_ITEMS = [
   { id: 'dragon',       type: 'fruit', ref: FRUITS.dragon,    emoji: FRUITS.dragon.emoji,    color: COLORS.dragon },
   { id: 'magnet',       type: 'fruit', ref: FRUITS.magnet,    emoji: FRUITS.magnet.emoji,    color: COLORS.magnet },
   { id: 'phoenix',      type: 'fruit', ref: FRUITS.phoenix,   emoji: FRUITS.phoenix.emoji,   color: COLORS.phoenix },
+  { id: 'smoke',        type: 'fruit', ref: FRUITS.smoke,     emoji: FRUITS.smoke.emoji,     color: COLORS.smoke },
+  { id: 'paw',          type: 'fruit', ref: FRUITS.paw,       emoji: FRUITS.paw.emoji,       color: COLORS.paw },
+  { id: 'love',         type: 'fruit', ref: FRUITS.love,      emoji: FRUITS.love.emoji,      color: COLORS.love },
+  { id: 'rumble',       type: 'fruit', ref: FRUITS.rumble,    emoji: FRUITS.rumble.emoji,    color: COLORS.rumble },
+  { id: 'dough',        type: 'fruit', ref: FRUITS.dough,     emoji: FRUITS.dough.emoji,     color: COLORS.dough },
   { id: 'soulscythe',   type: 'sword', ref: SWORDS.soulscythe, emoji: SWORDS.soulscythe.emoji, color: COLORS.soulscythe },
   { id: 'sunspear',     type: 'sword', ref: SWORDS.sunspear,   emoji: SWORDS.sunspear.emoji,   color: COLORS.sunspear },
   { id: 'frostfang',    type: 'sword', ref: SWORDS.frostfang,  emoji: SWORDS.frostfang.emoji,  color: COLORS.frostfang },
@@ -538,3 +603,21 @@ export const QUESTS = [
   { id: 'fruit1', title: 'Fruit Hunt', desc: 'Collect or buy any fruit.', stat: 'fruits', need: 1, reward: { tokens: 700, xp: 120 } },
   { id: 'boat1', title: 'Sea Legs', desc: 'Purchase any boat from the Shipwright.', stat: 'boats', need: 1, reward: { tokens: 900, xp: 150 } },
 ];
+
+export const SECRET_QUESTS = [
+  { id: 'sec_shadow', title: 'Shadow Ledger', desc: 'A hidden bounty: drop 50 pirates without a word.', stat: 'kills', need: 50, reward: { levels: 5 } },
+  { id: 'sec_sea', title: 'Salt Archive', desc: 'Own a boat and still hunt 80 pirates.', stat: 'kills', need: 80, reward: { levels: 12 } },
+  { id: 'sec_legend', title: 'Gold Whisper', desc: 'Pull a legendary from the gacha.', stat: 'legends', need: 1, reward: { levels: 25 } },
+  { id: 'sec_awaken', title: 'Second Dawn', desc: 'Awaken any Devil Fruit.', stat: 'awakens', need: 1, reward: { levels: 40 } },
+  { id: 'sec_century', title: 'Century War', desc: 'Defeat 200 pirates. The board will not name you.', stat: 'kills', need: 200, reward: { levels: 100 } },
+];
+
+export const AWAKEN = { killNeed: 20, cost: 2200, dmg: 0.4 };
+
+export const RACES = {
+  human:    { id: 'human',    name: 'Human',    emoji: '🧑', speed: 1,    swim: 1,    jump: 1,    fall: 1,    hp: 1,    dmg: 1,    blurb: 'Balanced. No tricks — just will.' },
+  mink:     { id: 'mink',     name: 'Mink',     emoji: '🐾', speed: 1.12, swim: 0.95, jump: 1.18, fall: 1,    hp: 0.96, dmg: 1.04, blurb: 'Faster on land with a springy leap.' },
+  fishman:  { id: 'fishman',  name: 'Fishman',  emoji: '🐟', speed: 0.94, swim: 1.6,  jump: 0.95, fall: 1,    hp: 1.08, dmg: 1.06, blurb: 'Owns the sea. Hits harder in the tide.' },
+  skypiean: { id: 'skypiean', name: 'Skypiean', emoji: '🪶', speed: 1.04, swim: 0.9,  jump: 1.28, fall: 0.78, hp: 0.92, dmg: 1,    blurb: 'Floats longer. The sky is a second floor.' },
+  cyborg:   { id: 'cyborg',   name: 'Cyborg',   emoji: '🤖', speed: 0.92, swim: 0.88, jump: 0.92, fall: 1.08, hp: 1.2,  dmg: 1.1,  blurb: 'Armored chassis. Slow, brutal, durable.' },
+};

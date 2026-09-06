@@ -9,7 +9,7 @@ import { FX } from './effects.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
 import { castSkill, castM1, tickHeld, releaseHeld } from './skills.js';
-import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER, BOATS, GIFT_CODES, QUESTS } from './config.js';
+import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER, BOATS, GIFT_CODES, QUESTS, SECRET_QUESTS, AWAKEN, RACES } from './config.js';
 import { FruitDealer, FruitSpawner, BoatDealer, Gacha, validateGameState } from './progression.js';
 import { createSwordMesh } from './models.js';
 import { sfx } from './audio.js';
@@ -59,8 +59,11 @@ const game = {
   equippedFruit: null, equippedSword: null, equippedStyle: 'combat', activeWeapon: 'style',
   cooldowns: {},
   tokens: 0, kills: 0,
-  questStats: { kills: 0, fruits: 0, boats: 0 },
+  questStats: { kills: 0, fruits: 0, boats: 0, legends: 0, awakens: 0 },
   claimedQuests: new Set(),
+  fruitKills: {},
+  awakened: new Set(),
+  raceId: 'human',
   redeemed: loadRedeemed(),
   level: 1, xp: 0, xpToNext: 100,
   statPoints: 0, stats: { health: 0, fruit: 0, sword: 0, fighting: 0 },
@@ -90,7 +93,7 @@ game.allocateStat = (type, rawAmount) => {
   if (amount > game.statPoints) amount = game.statPoints;
   game.statPoints -= amount; game.stats[type] += amount;
   if (type === 'health') {
-    player.maxHp = PLAYER.maxHp + game.stats.health * 20 + (game.level - 1) * 45;
+    applyRaceHp();
     player.hp = Math.min(player.maxHp, player.hp + amount * 20);
   }
   game.refreshCombatBonus();
@@ -99,8 +102,67 @@ game.allocateStat = (type, rawAmount) => {
 
 game.refreshCombatBonus = () => {
   const stat = game.activeWeapon === 'fruit' ? game.stats.fruit : game.activeWeapon === 'sword' ? game.stats.sword : game.stats.fighting;
-  player.damageBonus = stat * 0.05;
+  const race = RACES[game.raceId] || RACES.human;
+  let bonus = stat * 0.05 + ((race.dmg || 1) - 1);
+  if (game.activeWeapon === 'fruit' && game.awakened.has(game.equippedFruit)) bonus += AWAKEN.dmg;
+  player.damageBonus = bonus;
 };
+
+function applyRaceHp() {
+  const race = RACES[game.raceId] || RACES.human;
+  player.maxHp = Math.round((PLAYER.maxHp + game.stats.health * 20 + (game.level - 1) * 45) * (race.hp || 1));
+  player.hp = Math.min(player.maxHp, player.hp);
+}
+
+game.setRace = (id) => {
+  if (!RACES[id]) return;
+  game.raceId = id;
+  player.setRace(id);
+  applyRaceHp();
+  game.refreshCombatBonus();
+  ui.setHp(player.hp / player.maxHp);
+  if (ui.renderRaces) ui.renderRaces();
+  ui.toast(`Race: ${RACES[id].emoji} ${RACES[id].name}`);
+};
+
+game.tryAwaken = () => {
+  const id = game.equippedFruit;
+  if (!id) return ui.toast('Equip a fruit before awakening.');
+  if (game.awakened.has(id)) return ui.toast(`${FRUITS[id].name} is already awakened.`);
+  const kills = game.fruitKills[id] || 0;
+  if (kills < AWAKEN.killNeed) return ui.toast(`Need ${AWAKEN.killNeed} fruit kills (${kills}/${AWAKEN.killNeed}).`);
+  if (game.tokens < AWAKEN.cost) return ui.toast(`Need ${AWAKEN.cost.toLocaleString()} money to awaken.`);
+  game.tokens -= AWAKEN.cost;
+  game.awakened.add(id);
+  game.noteQuest('awakens');
+  game.refreshCombatBonus();
+  ui.setTokens(game.tokens);
+  ui.buildSkillBar();
+  fx.pillar({ x: player.position.x, z: player.position.z, height: 40, color: FRUITS[id].color, duration: 1.4, rings: 6 });
+  fx.shake(0.7, 2.2);
+  sfx.levelup();
+  ui.toast(`${FRUITS[id].name} awakened! Skills hit +${Math.round(AWAKEN.dmg * 100)}%.`, 3200);
+};
+
+function grantLevels(n) {
+  const start = game.level;
+  for (let i = 0; i < n && game.level < PLAYER.maxLevel; i++) {
+    game.level += 1;
+    game.xpToNext = Math.round(100 * Math.pow(1.08, game.level - 1));
+    game.statPoints += 3;
+  }
+  const gained = game.level - start;
+  if (!gained) return;
+  player.level = game.level;
+  applyRaceHp();
+  player.hp = player.maxHp;
+  game.xp = 0;
+  ui.setLevel(game.level, game.xp, game.xpToNext);
+  ui.refreshStats();
+  fx.pillar({ x: player.position.x, z: player.position.z, height: 36, color: 0xffd56b, duration: 1.2, rings: 5 });
+  fx.shake(0.45, 1.6);
+  sfx.levelup();
+}
 
 game.collectFruit = () => game.interact();
 
@@ -132,16 +194,18 @@ game.noteQuest = (stat, n = 1) => {
 };
 
 game.claimQuest = (id) => {
-  const q = QUESTS.find((x) => x.id === id);
+  const q = QUESTS.find((x) => x.id === id) || SECRET_QUESTS.find((x) => x.id === id);
   if (!q) return { ok: false, message: 'Unknown quest.' };
   if (game.claimedQuests.has(id)) return { ok: false, message: 'Already claimed.' };
   if ((game.questStats[q.stat] || 0) < q.need) return { ok: false, message: 'Quest not finished yet.' };
   game.claimedQuests.add(id);
   if (q.reward.tokens) game.tokens += q.reward.tokens;
   if (q.reward.xp) addXp(q.reward.xp);
+  if (q.reward.levels) grantLevels(q.reward.levels);
   ui.setTokens(game.tokens);
   ui.renderQuests();
-  return { ok: true, message: `Quest complete: ${q.title}!` };
+  const extra = q.reward.levels ? ` +${q.reward.levels} levels` : '';
+  return { ok: true, message: `Quest complete: ${q.title}!${extra}` };
 };
 
 game.redeemCode = (raw) => {
@@ -187,8 +251,16 @@ game.startPlay = () => {
   if (game.playing) return;
   sfx.unlock();
   game.playing = true;
+  game.launching = true;
+  player.position.set(0, 36, 0);
+  player.vy = -4;
+  player.onGround = false;
+  fx.pillar({ x: 0, z: 0, height: 48, color: 0xffe08a, duration: 1.1, rings: 6 });
+  fx.shockwave({ x: 0, z: 0, radius: 16, color: 0xffe08a, duration: 0.7, debrisCount: 6 });
+  sfx.levelup();
   ui.showGameUI();
   ui.toast('WASD or joystick • drag to look • tap to attack • E talk to quests', 4800);
+  setTimeout(() => { game.launching = false; }, 1100);
 };
 
 game.spinGacha = (count = 1) => {
@@ -198,11 +270,14 @@ game.spinGacha = (count = 1) => {
   ui.refreshInventory();
   if (ui.renderBoatShop) ui.renderBoatShop();
   if (ui.renderGacha) ui.renderGacha(result);
-  if (result.ok) {
+    if (result.ok) {
     if (result.rarity === 'legendary') sfx.legendary();
     else sfx.gacha();
-    const newFruits = (result.pulls || []).filter((p) => !p.dupe && p.item.type === 'fruit');
+    const pulls = result.pulls || [];
+    const newFruits = pulls.filter((p) => !p.dupe && p.item.type === 'fruit');
     if (newFruits.length) game.noteQuest('fruits', newFruits.length);
+    const legends = pulls.filter((p) => p.rarity === 'legendary').length;
+    if (legends) game.noteQuest('legends', legends);
   }
   ui.toast(result.message, result.ok && count === 10 ? 3600 : 2200);
   return result;
@@ -345,7 +420,7 @@ function addXp(xpGain) {
     game.level += 1;
     game.xpToNext = Math.round(100 * Math.pow(1.08, game.level - 1));
     player.level = game.level;
-    player.maxHp = PLAYER.maxHp + game.stats.health * 20 + (game.level - 1) * 45;
+    applyRaceHp();
     player.hp = player.maxHp;
     game.statPoints += 3;
     leveled = true;
@@ -363,6 +438,10 @@ function addXp(xpGain) {
 function onKill(e) {
   game.kills += 1;
   game.noteQuest('kills');
+  if (game.activeWeapon === 'fruit' && game.equippedFruit) {
+    const fid = game.equippedFruit;
+    game.fruitKills[fid] = (game.fruitKills[fid] || 0) + 1;
+  }
   const tk = (10 + Math.floor(Math.random() * 91)) * (e.tier || 1);
   game.tokens += tk;
   addXp(Math.round(22 + e.maxHp * 0.08));
@@ -371,7 +450,7 @@ function onKill(e) {
 }
 
 function applyBloom() {
-  if (world.gfx.bloom && world.composer) world.render = () => world.composer.render();
+  if (world.gfx.bloom && !world.gfx.fastMode && world.composer) world.render = () => world.composer.render();
   else world.render = () => world.renderer.render(world.scene, world.camera);
 }
 game.applyBloom = applyBloom;
@@ -411,6 +490,8 @@ initCooldowns();
 ui.buildSkillBar();
 ui.refreshInventory();
 ui.setLevel(game.level, game.xp, game.xpToNext);
+ui.setGpu(world.gpuName);
+if (ui.renderRaces) ui.renderRaces();
 
 const reticle = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.8, 24),
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
@@ -440,10 +521,15 @@ function loopBody() {
   let dt = (now - last) / 1000; last = now;
   if (dt > 0.05) dt = 0.05;
 
+  fx.particles = world.gfx.particles && !world.gfx.fastMode;
+  fx.reduceMotion = !!world.gfx.reduceMotion;
+
+  fpsAcc += dt; fpsCount++; fpsTimer += dt;
+  if (fpsTimer >= 0.5) { ui.setFps(fpsCount / fpsAcc); fpsAcc = 0; fpsCount = 0; fpsTimer = 0; }
+
   if (!game.playing) {
     input.camYaw += dt * 0.08;
     player.update(dt, new THREE.Vector3());
-    fx.particles = world.gfx.particles;
     fx.update(dt);
     world.update(dt, now / 1000);
     updateCamera();
@@ -474,7 +560,6 @@ function loopBody() {
   fruitSpawner.update(dt);
   if (dealer.update(dt)) { ui.renderDealerStock(); ui.toast('Fruit Dealer stock has refreshed!', 3000); }
   ui.updateProgression();
-  fx.particles = world.gfx.particles;
   fx.update(dt);
   world.update(dt, now / 1000);
   validateGameState(game);
@@ -490,9 +575,6 @@ function loopBody() {
   ui.updateSkillBar(dt);
   ui.setHp(player.hp / player.maxHp);
   ui.setJumps(player.airJumps, PLAYER.maxAirJumps, player.onGround);
-
-  fpsAcc += dt; fpsCount++; fpsTimer += dt;
-  if (fpsTimer >= 0.5) { ui.setFps(fpsCount / fpsAcc); fpsAcc = 0; fpsCount = 0; fpsTimer = 0; }
 
   world.render();
 }

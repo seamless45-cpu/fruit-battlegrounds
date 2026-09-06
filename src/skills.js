@@ -26,7 +26,10 @@ function randomArena() {
   return V(Math.cos(a) * r, Math.sin(a) * r);
 }
 function blast(game, x, z, r, dmgPct, color, extra = {}) {
-  game.fx.explosion({ x, z, radius: r, color, life: 0.5, debris: 5, intensity: 1.1 });
+  game.fx.explosion({ x, z, radius: r, color, life: 0.55, debris: 8, intensity: 1.15 });
+  if (!game.fx.reduceMotion) {
+    game.fx.shockwave({ x, z, radius: r * 0.85, color, duration: 0.38, debrisCount: 0 });
+  }
   let hits = 0;
   const center = V(x, z);
   game.enemies.alive().forEach((e) => {
@@ -1090,6 +1093,101 @@ const handlers = {
       }, dispose() {},
     });
   },
+
+  sm_cloud(game, aim) {
+    game.fx.firepit({ x: aim.x, z: aim.z, radius: 8, duration: 7, dps: DMG(0.06), color: 0x9aa3b0 },
+      (px, pz, pr, d) => game.enemies.applyArea(V(px, pz), pr, d, { burn: true, burnDps: DMG(0.03), burnDur: 3 }));
+    game.fx.shockwave({ x: aim.x, z: aim.z, radius: 8, color: 0xc8c2b4, duration: 0.5, debrisCount: 4 });
+  },
+  sm_burst(game) { blast(game, game.player.position.x, game.player.position.z, 12, 0.42, 0x9aa3b0, { knockForce: 12, blind: true, blindDur: 1.4 }); },
+  sm_choke(game) {
+    let t = 0;
+    game.fx.add({ update: (dt) => { t += dt; game.enemies.pullTo(game.player.position, 120); return t < 0.55; }, dispose() {} });
+    game.after(0.55, () => blast(game, game.player.position.x, game.player.position.z, 10, 0.48, 0x9aa3b0, { stun: true, stunDur: 1.4 }));
+  },
+  sm_veil(game) {
+    game.shade(0xc8c2b4, 0.45, true);
+    blast(game, game.player.position.x, game.player.position.z, 18, 0.36, 0x9aa3b0, { blind: true, blindDur: 3.5, stun: true, stunDur: 0.8 });
+  },
+
+  pw_swipe(game, aim) {
+    const dir = aimDir(game.player, aim);
+    game.fx.slashFx(game.player.position.x, 1.7, game.player.position.z, 0xf2c4a8, game.player.facing, 9);
+    coneHit(game, dir, 11, 4.2, 0.34, { knockForce: 14 });
+  },
+  pw_pounce(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 12);
+    coneHit(game, dir, 14, 3.4, 0.44, { knockForce: 16 });
+    if (game.sfx) game.sfx.whoosh();
+  },
+  pw_barrage(game) {
+    for (let i = 0; i < 7; i++) game.after(i * 0.07, () => {
+      game.fx.slashFx(game.player.position.x, 1.6, game.player.position.z, 0xf2c4a8, game.player.facing + i * 0.7, 7);
+      game.enemies.applyArea(game.player.position, 7, DMG(0.11), {});
+    });
+  },
+  pw_roar(game) {
+    blast(game, game.player.position.x, game.player.position.z, 15, 0.46, 0xf2c4a8, { stun: true, stunDur: 1.6, knockForce: 18 });
+    if (game.sfx) game.sfx.thunder();
+  },
+
+  lv_arrow(game, aim) {
+    game.fx.launchOrb(game.player.position.clone(), aimDir(game.player, aim), {
+      speed: 40, range: 85, color: 0xff6aa8, radius: 0.8, enemies: game.enemies, homing: 7,
+      onExplode: (p) => blast(game, p.x, p.z, 5, 0.34, 0xff6aa8, {}),
+    });
+  },
+  lv_charm(game) {
+    game.enemies.applyArea(game.player.position, 13, DMG(0.28), { stun: true, stunDur: 2.2 });
+    game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 13, color: 0xff6aa8, duration: 0.7, debrisCount: 4 });
+  },
+  lv_heart(game) {
+    game.enemies.healPlayer(DMG(0.28));
+    blast(game, game.player.position.x, game.player.position.z, 10, 0.36, 0xff6aa8, {});
+    game.fx.pillar({ x: game.player.position.x, z: game.player.position.z, height: 20, color: 0xff6aa8, duration: 0.8, rings: 3 });
+  },
+  lv_burst(game) { blast(game, game.player.position.x, game.player.position.z, 18, 0.6, 0xff6aa8, { stun: true, stunDur: 1.2, knockForce: 16 }); },
+
+  rm_drum(game) {
+    blast(game, game.player.position.x, game.player.position.z, 11, 0.48, 0xc9b44a, { knockForce: 20, stun: true, stunDur: 0.7 });
+    game.fx.shake(0.75, 2.4);
+    if (game.sfx) game.sfx.impact();
+  },
+  rm_quake(game) {
+    for (let i = 0; i < 3; i++) game.after(i * 0.18, () => {
+      game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 11 + i * 5, color: 0xc9b44a, duration: 0.55, debrisCount: 5 });
+      game.enemies.applyArea(game.player.position, 11 + i * 5, DMG(0.16), {});
+    });
+  },
+  rm_sky(game) {
+    for (let i = 0; i < 6; i++) game.after(i * 0.12, () => {
+      const rp = nearPoint(game.player.position, 12);
+      game.fx.bolt({ x: rp.x, z: rp.z, height: 28, color: 0xc9b44a, life: 0.22 });
+      game.enemies.applyArea(V(rp.x, rp.z), 5, DMG(0.18), { stun: true, stunDur: 0.6 });
+    });
+    if (game.sfx) game.sfx.thunder();
+  },
+  rm_collapse(game) {
+    blast(game, game.player.position.x, game.player.position.z, 20, 0.72, 0xc9b44a, { stun: true, stunDur: 1.6, knockForce: 22 });
+    game.fx.shake(0.95, 3.2);
+  },
+
+  dh_stretch(game, aim) {
+    const dir = aimDir(game.player, aim); lunge(game, dir, 10);
+    coneHit(game, dir, 12, 3.2, 0.4, { knockForce: 16 });
+    if (game.sfx) game.sfx.punch();
+  },
+  dh_trap(game) {
+    game.enemies.applyArea(game.player.position, 12, DMG(0.3), { stun: true, stunDur: 2 });
+    game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 12, color: 0xe8c9a0, duration: 0.65, debrisCount: 5 });
+  },
+  dh_roll(game) {
+    game.player.vy = 16;
+    game.after(0.4, () => blast(game, game.player.position.x, game.player.position.z, 10, 0.46, 0xe8c9a0, { knockForce: 16 }));
+  },
+  dh_mash(game) {
+    blast(game, game.player.position.x, game.player.position.z, 14, 0.58, 0xe8c9a0, { knockForce: 18, stun: true, stunDur: 1 });
+  },
 };
 
 // ------------------------------------------------------------
@@ -1199,7 +1297,12 @@ export function castSkill(game, id, aim) {
     try {
       if (game.sfx) game.sfx.skill();
       if (game.player.playSkill) game.player.playSkill();
-      return h(game, aim);
+      const ok = h(game, aim);
+      if (game.activeWeapon === 'fruit' && game.awakened && game.awakened.has(game.equippedFruit) && !game.fx.reduceMotion) {
+        const p = game.player.position;
+        game.fx.shockwave({ x: p.x, z: p.z, radius: 7, color: 0xffe08a, duration: 0.28, debrisCount: 2 });
+      }
+      return ok;
     } catch (e) { console.warn('skill error', id, e); }
   }
   return true;

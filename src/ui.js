@@ -1,7 +1,7 @@
 // ============================================================
 //  Reworked HUD, dealers, menu, gifts, quests, motion.
 // ============================================================
-import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES, STYLE_PRICES, QUESTS, GACHA } from './config.js';
+import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES, STYLE_PRICES, QUESTS, SECRET_QUESTS, GACHA, RACES, AWAKEN } from './config.js';
 
 export class UI {
   constructor(game) {
@@ -22,7 +22,10 @@ export class UI {
   showGameUI() {
     ['topbar', 'hpHud', 'inventory', 'skillbar', 'crosshair', 'settingsBtn', 'helpBtn', 'utilityBar', 'joyWrap', 'jumpBtn', 'sailBtn']
       .forEach((id) => { const el = document.getElementById(id); if (el) el.classList.remove('hidden'); });
-    document.getElementById('loader').classList.add('hidden');
+    const loader = document.getElementById('loader');
+    loader.classList.add('is-launch');
+    document.body.classList.add('in-game');
+    setTimeout(() => loader.classList.add('hidden'), 720);
   }
 
   togglePanel(id) {
@@ -88,7 +91,17 @@ export class UI {
       document.getElementById('skillbarTitle').textContent = 'NO WEAPON';
       return;
     }
-    document.getElementById('skillbarTitle').textContent = weapon.name.toUpperCase();
+    const awake = g.activeWeapon === 'fruit' && g.awakened && g.awakened.has(g.equippedFruit);
+    document.getElementById('skillbarTitle').textContent = weapon.name.toUpperCase() + (awake ? ' ☾' : '');
+    const awakenBtn = document.getElementById('awakenBtn');
+    if (awakenBtn) {
+      awakenBtn.classList.toggle('hidden', g.activeWeapon !== 'fruit' || !g.equippedFruit);
+      if (g.equippedFruit) {
+        const kills = g.fruitKills[g.equippedFruit] || 0;
+        awakenBtn.textContent = awake ? 'Awakened' : `Awaken ${kills}/${AWAKEN.killNeed}`;
+        awakenBtn.disabled = !!awake;
+      }
+    }
     if (weapon.m1) this._addSkillRow(weapon.m1, 'LMB', true);
     weapon.skills.forEach((sk, i) => this._addSkillRow(sk, (SKILL_KEYS[i] || '?').toUpperCase(), false));
   }
@@ -173,7 +186,7 @@ export class UI {
     };
     const toggle = (label, hint, key) => {
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!gfx[key];
-      cb.addEventListener('change', () => { this.game.world.setGfx(key, cb.checked); if (key === 'bloom') this.game.applyBloom(); });
+      cb.addEventListener('change', () => { this.game.world.setGfx(key, cb.checked); if (key === 'bloom' || key === 'fastMode') this.game.applyBloom(); });
       return block(label, hint, cb);
     };
     const slider = (label, hint, key, min, max, step) => {
@@ -191,6 +204,8 @@ export class UI {
     body.appendChild(toggle('Fog', 'Distance haze that fades the horizon. Off makes the sea razor-sharp.', 'fog'));
     body.appendChild(toggle('Particles', 'Sparks, debris, and ember trails. Off cuts the busiest skill VFX.', 'particles'));
     body.appendChild(toggle('Clouds', 'Daytime cloud puffs drifting over the arena.', 'clouds'));
+    body.appendChild(toggle('Fast Mode', 'Caps resolution, kills bloom and particles for max FPS on weak GPUs.', 'fastMode'));
+    body.appendChild(toggle('Reduce Motion', 'Cuts camera shake, extra VFX, and UI animation. Easier on the eyes.', 'reduceMotion'));
     body.appendChild(toggle('Soft-lock Aim', 'Skills snap toward the pirate nearest screen center.', 'softLock'));
     body.appendChild(toggle('Invert Look X', 'Swap left/right when you drag to look.', 'invertLookX'));
     body.appendChild(toggle('Invert Look Y', 'Swap up/down when you drag to look.', 'invertLookY'));
@@ -255,7 +270,7 @@ export class UI {
     ['health', 'fruit', 'sword', 'fighting'].forEach((type) => {
       document.getElementById(`${type}StatBuy`).addEventListener('click', () => this.game.allocateStat(type));
     });
-    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats(); this.renderQuests(); this.renderGacha();
+    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats(); this.renderQuests(); this.renderGacha(); this.renderRaces();
   }
 
   renderDealerStock() {
@@ -379,6 +394,43 @@ export class UI {
       });
       list.appendChild(card);
     });
+    const secret = document.getElementById('secretQuestList') || list;
+    if (secret !== list) secret.innerHTML = '';
+    SECRET_QUESTS.forEach((q) => {
+      const have = g.questStats[q.stat] || 0;
+      const claimed = g.claimedQuests.has(q.id);
+      const ready = !claimed && have >= q.need;
+      const card = document.createElement('div');
+      card.className = 'quest-card secret' + (claimed ? ' claimed' : ready ? ' done' : '');
+      const pct = Math.min(100, (have / q.need) * 100);
+      card.innerHTML = `
+        <h4>${q.title}</h4>
+        <p>${q.desc}</p>
+        <div class="quest-prog"><i style="width:${pct}%"></i></div>
+        <p>${Math.min(have, q.need)} / ${q.need} · Reward +${q.reward.levels} levels</p>
+        <button class="quest-claim" type="button" ${ready ? '' : 'disabled'}>${claimed ? 'Claimed' : ready ? 'Claim' : 'Hidden bounty'}</button>`;
+      card.querySelector('.quest-claim').addEventListener('click', () => {
+        const result = this.game.claimQuest(q.id);
+        this.toast(result.message);
+        this.renderQuests();
+      });
+      secret.appendChild(card);
+    });
+  }
+
+  renderRaces() {
+    const wrap = document.getElementById('raceStock');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const g = this.game;
+    Object.values(RACES).forEach((r) => {
+      const card = document.createElement('button');
+      card.className = 'dealer-card' + (g.raceId === r.id ? ' selected' : '');
+      card.type = 'button';
+      card.innerHTML = `<span>${r.emoji}</span><b>${r.name}</b><small>${g.raceId === r.id ? 'Active' : r.blurb}</small>`;
+      card.addEventListener('click', () => g.setRace(r.id));
+      wrap.appendChild(card);
+    });
   }
 
   setPrompt(text) {
@@ -442,7 +494,14 @@ export class UI {
     if (menu) menu.textContent = v;
   }
   setKills(n) { document.getElementById('killCount').textContent = n; }
-  setFps(n) { document.getElementById('fpsCount').textContent = Math.round(n); }
+  setFps(n) { const el = document.getElementById('fpsCount'); if (el) el.textContent = Math.round(n); }
+  setGpu(name) {
+    const v = name || 'gpu: unknown';
+    const chip = document.getElementById('gpuCount');
+    if (chip) chip.textContent = v;
+    const loader = document.getElementById('loaderGpu');
+    if (loader) loader.textContent = v;
+  }
   setJumps(n, max, onGround) {
     const left = onGround ? max : n;
     const el = document.getElementById('jumpsCount');

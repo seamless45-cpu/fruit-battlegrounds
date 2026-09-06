@@ -21,7 +21,26 @@ const GFX = {
   freeAim: 0.32,
   exposure: 1.22,
   clouds: true,
+  fastMode: false,
+  reduceMotion: false,
 };
+
+function detectGpu(renderer) {
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    let raw = ext
+      ? (gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '')
+      : (gl.getParameter(gl.RENDERER) || '');
+    raw = String(raw).replace(/^ANGLE\s*\(/i, '').replace(/\)\s*$/, '');
+    raw = raw.replace(/\s*,\s*(Direct3D|D3D11?|OpenGL|Vulkan|Metal|vs_\d).*$/i, '');
+    raw = raw.replace(/NVIDIA( Corporation)?/ig, '').replace(/AMD /i, '').replace(/Intel\(R\)\s*/i, 'intel ');
+    raw = raw.replace(/\s+/g, ' ').trim().toLowerCase();
+    return 'gpu: ' + (raw || 'unknown');
+  } catch {
+    return 'gpu: unknown';
+  }
+}
 
 export class World {
   constructor(canvas) {
@@ -35,6 +54,7 @@ export class World {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.22;
+    this.gpuName = detectGpu(this.renderer);
 
     this.scene = new THREE.Scene();
     this.fogColor = 0xb9d8ef;
@@ -273,6 +293,7 @@ export class World {
   }
 
   update(dt, time) {
+    if (this.gfx.reduceMotion) return;
     if (this.waterTex) this.waterTex.offset.x = (this.waterTex.offset.x + dt * 0.02) % 1;
     if (this.clouds) {
       this.clouds.forEach((c) => {
@@ -294,25 +315,36 @@ export class World {
 
   _applyGfx() {
     const q = this.gfx.quality;
-    const pr = { Low: 0.55, Medium: 0.75, High: 1, Ultra: 1.35 }[q] || 1;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * pr * this.gfx.pixelRatioScale);
-    this.renderer.shadowMap.enabled = this.gfx.shadows;
+    let pr = { Low: 0.55, Medium: 0.75, High: 1, Ultra: 1.35 }[q] || 1;
+    if (this.gfx.fastMode) pr = Math.min(pr, 0.5);
+    const scale = this.gfx.fastMode ? Math.min(this.gfx.pixelRatioScale, 0.6) : this.gfx.pixelRatioScale;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * pr * scale);
+    const shadows = this.gfx.fastMode ? false : this.gfx.shadows;
+    this.renderer.shadowMap.enabled = shadows;
     if (this.sun) {
-      this.sun.castShadow = this.gfx.shadows;
-      const map = q === 'Ultra' ? 2048 : q === 'Low' ? 512 : 1024;
+      this.sun.castShadow = shadows;
+      const map = this.gfx.fastMode || q === 'Low' ? 512 : q === 'Ultra' ? 2048 : 1024;
       if (this.sun.shadow.mapSize.x !== map) this.sun.shadow.mapSize.set(map, map);
     }
-    this.scene.fog = this.gfx.fog ? new THREE.Fog(this.fogColor || 0xb9d8ef, 140, 560) : null;
+    this.scene.fog = this.gfx.fog && !this.gfx.fastMode ? new THREE.Fog(this.fogColor || 0xb9d8ef, 140, 560) : null;
     this.renderer.toneMappingExposure = this.gfx.exposure || 1.22;
     if (this.camera && this.gfx.fov) {
       this.camera.fov = this.gfx.fov;
       this.camera.updateProjectionMatrix();
     }
-    if (this.clouds) this.clouds.forEach((c) => { c.group.visible = this.gfx.clouds !== false; });
+    const showClouds = this.gfx.clouds !== false && !this.gfx.fastMode && !this.gfx.reduceMotion;
+    if (this.clouds) this.clouds.forEach((c) => { c.group.visible = showClouds; });
+    document.body.classList.toggle('reduce-motion', !!this.gfx.reduceMotion);
+    document.body.classList.toggle('fast-mode', !!this.gfx.fastMode);
   }
 
   setGfx(key, value) {
     this.gfx[key] = value;
+    if (key === 'fastMode' && value) {
+      this.gfx.particles = false;
+      this.gfx.bloom = false;
+      this.gfx.clouds = false;
+    }
     this._applyGfx();
   }
 

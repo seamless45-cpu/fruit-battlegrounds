@@ -43,6 +43,7 @@ export class FX {
     this.shakeOffset = new THREE.Vector3();
     this._t = 0;
     this.particles = true;
+    this.reduceMotion = false;
 
     this.atlas = bakeVfxAtlas();
     const { glow, ring, bolt, slash, fire, spark, ice, water } = this.atlas;
@@ -117,6 +118,7 @@ export class FX {
   }
 
   shake(amount = 0.5, intensity = null) {
+    if (this.reduceMotion) return;
     if (intensity != null) this.shakeMax = intensity;
     this.shakeTrauma = Math.min(1, this.shakeTrauma + amount);
   }
@@ -179,10 +181,38 @@ export class FX {
 
   explosion(opts = {}) {
     const { x = 0, z = 0, radius = 8, color = 0xff7a2a, life = 0.55, debris = 8 } = opts;
-    this._flash(this.rings, x, 0.12, z, color, Math.max(1.6, radius * 0.22), life * 1.15, 3.4);
-    if (debris > 0 && this.particles) {
-      this.debris(x, z, Math.min(debris, 12), color, radius * 0.55);
-      this._chunks(x, z, Math.min(4, 1 + (debris / 4) | 0), color, radius * 0.35);
+    if (this.reduceMotion) {
+      this._flash(this.rings, x, 0.1, z, color, Math.max(1.2, radius * 0.18), 0.22, 2.2);
+      return;
+    }
+    this._flash(this.rings, x, 0.06, z, color, Math.max(1.4, radius * 0.16), life * 1.25, 5.8);
+    this._flash(this.fires, x, 0.85, z, color, Math.max(1.6, radius * 0.28), life * 0.7, 1.6);
+    if (this.particles) {
+      for (let i = 0; i < 4; i++) {
+        const s = this.glow.take();
+        if (!s) break;
+        const a = (i / 4) * Math.PI * 2 + Math.random() * 0.4;
+        s.position.set(x + Math.cos(a) * 0.6, 0.5, z + Math.sin(a) * 0.6);
+        s.material.color.setHex(0xc8c2b4);
+        s.scale.setScalar(radius * 0.22);
+        const vel = new THREE.Vector3(Math.cos(a) * 2.2, 3.5 + Math.random() * 2.5, Math.sin(a) * 2.2);
+        let t = 0; const smokeLife = 0.7 + Math.random() * 0.25;
+        this.add({
+          update: (dt) => {
+            t += dt; vel.y *= 0.98;
+            s.position.addScaledVector(vel, dt);
+            const k = t / smokeLife;
+            s.material.opacity = 0.55 * (1 - k);
+            s.scale.setScalar(radius * (0.22 + k * 0.7));
+            return t < smokeLife;
+          },
+          dispose: () => this.glow.give(s),
+        });
+      }
+      if (debris > 0) {
+        this.debris(x, z, Math.min(debris, 12), color, radius * 0.55);
+        this._chunks(x, z, Math.min(4, 1 + (debris / 4) | 0), color, radius * 0.35);
+      }
     }
   }
 
@@ -290,18 +320,11 @@ export class FX {
   }
 
   bolt(opts = {}) {
-    const { x = 0, z = 0, height = 30, color = 0x9b30ff, life = 0.28, branches = 2 } = opts;
-    const ox = (Math.random() * 2 - 1) * 1.2;
-    const oz = (Math.random() * 2 - 1) * 1.2;
-    this._spawnBoltLine(x + ox, height, z + oz, x, 0.05, z, color, life, Math.max(1.6, height * 0.07));
-    const n = Math.min(4, branches | 0);
-    for (let i = 0; i < n; i++) {
-      const midY = height * (0.25 + Math.random() * 0.5);
-      const bx = x + (Math.random() * 2 - 1) * 5;
-      const bz = z + (Math.random() * 2 - 1) * 5;
-      this._spawnBoltLine(x, midY, z, bx, 0.05, bz, color, life * 0.75, 2.2);
-    }
-    if (this.particles) this.debris(x, z, 4, color, 3.5);
+    const { x = 0, z = 0, height = 30, color = 0x9b30ff, life = 0.28 } = opts;
+    const ox = (Math.random() * 2 - 1) * 0.8;
+    const oz = (Math.random() * 2 - 1) * 0.8;
+    this._spawnBoltLine(x + ox, height, z + oz, x, 0.05, z, color, life, Math.max(1.8, height * 0.08));
+    if (this.particles && !this.reduceMotion) this.debris(x, z, 3, color, 2.6);
   }
 
   boltLine(x, z, height, color, life = 0.18) {

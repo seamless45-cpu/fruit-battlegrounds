@@ -19,7 +19,9 @@ export class FruitDealer {
     if (game.ownedFruits.has(id)) return { ok: false, message: `You already own ${FRUITS[id].name}.` };
     const price = FRUIT_DEALER.prices[id];
     if (game.tokens < price) return { ok: false, message: `Need ${price.toLocaleString()} tokens.` };
-    game.tokens -= price; game.ownedFruits.add(id); return { ok: true, message: `${FRUITS[id].name} acquired!` };
+    game.tokens -= price; game.ownedFruits.add(id);
+    if (game.noteQuest) game.noteQuest('fruits');
+    return { ok: true, message: `${FRUITS[id].name} acquired!` };
   }
 }
 

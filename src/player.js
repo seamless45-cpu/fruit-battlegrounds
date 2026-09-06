@@ -2,7 +2,7 @@
 //  Player — remodeled fighter, air jumps, swimming, boats.
 // ============================================================
 import * as THREE from 'three';
-import { PLAYER, WORLD } from './config.js';
+import { PLAYER, WORLD, RACES } from './config.js';
 import { createPlayerModel, createBoatMesh } from './models.js';
 
 export class Player {
@@ -28,6 +28,8 @@ export class Player {
     this.lunge = new THREE.Vector3();
     this.anim = { attack: 0, skill: 0, hurt: 0, jump: 0, combo: 0 };
     this._wasGround = true;
+    this.raceId = 'human';
+    this.race = RACES.human;
 
     const rig = createPlayerModel();
     this.group = rig.group;
@@ -60,12 +62,19 @@ export class Player {
   }
   equipVisual(color) { this.setFruitColor(color); }
 
+  setRace(id) {
+    const def = RACES[id] || RACES.human;
+    this.raceId = def.id;
+    this.race = def;
+  }
+
   jump() {
     const now = performance.now();
     if (now - this._jumpAt < PLAYER.jumpCooldownMs) return false;
     if (this.mountedBoat) { this.dismountBoat(); return true; }
+    const j = this.race ? this.race.jump : 1;
     if (this.onGround) {
-      this.vy = PLAYER.jumpStrength;
+      this.vy = PLAYER.jumpStrength * j;
       this.onGround = false;
       this.airJumps = PLAYER.maxAirJumps - 1;
       this._jumpAt = now;
@@ -74,7 +83,7 @@ export class Player {
       return true;
     }
     if (this.airJumps > 0) {
-      this.vy = PLAYER.airJumpStrength;
+      this.vy = PLAYER.airJumpStrength * j;
       this.airJumps -= 1;
       this._jumpAt = now;
       this.playJump();
@@ -101,7 +110,10 @@ export class Player {
 
   update(dt, moveDir) {
     const land = this.world ? this.world.isOnLand(this.position.x, this.position.z) : true;
-    const spd = this.mountedBoat ? this.mountedBoat.speed : land ? this.speed : PLAYER.swimSpeed;
+    const race = this.race || RACES.human;
+    const spd = this.mountedBoat
+      ? this.mountedBoat.speed
+      : land ? this.speed * race.speed : PLAYER.swimSpeed * race.swim;
     const v = moveDir.clone().multiplyScalar(spd);
     this.position.addScaledVector(v, dt);
     if (this.lunge.lengthSq() > 0.01) {
@@ -115,7 +127,7 @@ export class Player {
     if (r > maxR) { this.position.x *= maxR / r; this.position.z *= maxR / r; }
 
     if (!this.mountedBoat) {
-      this.vy -= PLAYER.gravity * dt;
+      this.vy -= PLAYER.gravity * (race.fall || 1) * dt;
       this.position.y += this.vy * dt;
       const floor = land ? 0 : -0.22;
       if (this.position.y <= floor) {
