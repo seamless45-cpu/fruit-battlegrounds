@@ -239,3 +239,45 @@ export function createBoatMesh(def) {
   g.position.y = 0.1;
   return g;
 }
+
+export function createQuestNpc() {
+  const group = new THREE.Group();
+  const skin = std(0xf3c8a4);
+  const robe = std(0xd4a017, { metalness: 0.35, roughness: 0.45 });
+  const cream = std(0xf4ead0);
+  const dark = std(0x3a2414);
+  const sash = std(0x2f6d4a);
+
+  group.add(mesh(GEO.box, robe, 1.25, 1.55, 0.72, 0, 1.65, 0));
+  group.add(mesh(GEO.box, cream, 0.9, 0.5, 0.5, 0, 1.85, 0.16));
+  group.add(mesh(GEO.box, sash, 1.28, 0.16, 0.76, 0, 1.12, 0));
+  group.add(mesh(GEO.sphere, skin, 1.12, 1.18, 1.12, 0, 2.62, 0));
+  group.add(mesh(GEO.sphere, dark, 1.22, 0.55, 1.22, 0, 2.95, -0.04));
+  group.add(mesh(GEO.cyl, dark, 1.7, 0.12, 1.7, 0, 3.12, 0));
+  group.add(mesh(GEO.box, cream, 1.8, 0.08, 0.55, 0, 3.12, 0.7));
+  group.add(mesh(GEO.sphere, std(0x1a1020), 0.16, 0.16, 0.12, -0.22, 2.64, 0.48));
+  group.add(mesh(GEO.sphere, std(0x1a1020), 0.16, 0.16, 0.12, 0.22, 2.64, 0.48));
+  group.add(mesh(GEO.box, robe, 0.34, 0.95, 0.34, -0.82, 1.7, 0));
+  group.add(mesh(GEO.box, robe, 0.34, 0.95, 0.34, 0.82, 1.7, 0));
+  group.add(mesh(GEO.box, dark, 0.4, 1.05, 0.42, -0.32, 0.55, 0));
+  group.add(mesh(GEO.box, dark, 0.4, 1.05, 0.42, 0.32, 0.55, 0));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#f0c36a';
+  ctx.beginPath(); ctx.arc(64, 64, 56, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#1a1204'; ctx.lineWidth = 8; ctx.stroke();
+  ctx.fillStyle = '#1a1204';
+  ctx.font = '900 78px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('!', 64, 72);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const bang = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  bang.scale.set(1.4, 1.4, 1);
+  bang.position.y = 4.15;
+  group.add(bang);
+
+  return { group, bang };
+}

@@ -4,7 +4,7 @@
 //  enemyPct(p), after(sec,fn), tokens, upgrades, shade(hex,sec)
 // ============================================================
 import * as THREE from 'three';
-import { ENEMY } from './config.js';
+import { ENEMY, MELEE } from './config.js';
 
 const PURPLE = 0x9b30ff;
 const BLUE = 0x39c0ff;
@@ -668,17 +668,36 @@ const handlers = {
 // ------------------------------------------------------------
 export function castM1(game, weaponId) {
   const { fx, enemies, player } = game;
+  const melee = MELEE[weaponId] || MELEE.combat;
   const isBlade = weaponId === 'gravityblade';
   const isCombat = weaponId === 'combat';
+  const isPole = weaponId === 'pole';
+
+  const aim = game.aimPoint();
+  const dirAim = aim.clone().sub(player.position); dirAim.y = 0;
+  if (dirAim.lengthSq() > 0.01) player.facing = Math.atan2(dirAim.x, dirAim.z);
+
   game.m1Combo = (game.m1Combo || 0) + 1;
   if (game.m1Combo > 6) game.m1Combo = 1;
-  fx.slashFx(player.position.x, player.position.y + 1.8, player.position.z, isBlade ? PURPLE : isCombat ? 0xf0b36a : BLUE, player.facing);
+  const color = isBlade ? PURPLE : isCombat ? 0xf0b36a : BLUE;
+  fx.slashFx(player.position.x, player.position.y + 1.8, player.position.z, color, player.facing, melee.reach);
 
-  // hit enemies in front
   const fwd = new THREE.Vector3(Math.sin(player.facing), 0, Math.cos(player.facing));
+  const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+  const halfW = melee.width * 0.5;
+  const reach = melee.reach;
+  const height = melee.height;
+  const er = ENEMY.radius;
+
   enemies.alive().forEach((e) => {
-    const to = e.position.clone().sub(player.position).setY(0); const d = to.length();
-    if (d < 5 && to.normalize().dot(fwd) > 0.4) enemies.damage(e, DMG(0.18), {});
+    const dx = e.position.x - player.position.x;
+    const dz = e.position.z - player.position.z;
+    const dy = (e.position.y || 0) - player.position.y;
+    const along = dx * fwd.x + dz * fwd.z;
+    const side = dx * right.x + dz * right.z;
+    if (along > -0.45 && along < reach + er && Math.abs(side) < halfW + er && Math.abs(dy) < height) {
+      enemies.damage(e, DMG(melee.dmg), { knockDir: fwd, knockForce: 5 });
+    }
   });
 
   if (isBlade) {
@@ -691,14 +710,13 @@ export function castM1(game, weaponId) {
       });
     }
     game.endLag = 0.4;
-  } else if (!isCombat) {
-    // pole: combo 4 -> small bolt
+  } else if (isPole) {
     if (game.m1Combo === 4) {
-      fx.bolt({ x: player.position.x + fwd.x * 4, z: player.position.z + fwd.z * 4, height: 18, color: BLUE, life: 0.22 });
-      enemies.applyArea(V(player.position.x + fwd.x * 4, player.position.z + fwd.z * 4), 4, DMG(0.15), {});
+      fx.bolt({ x: player.position.x + fwd.x * 5, z: player.position.z + fwd.z * 5, height: 18, color: BLUE, life: 0.22 });
+      enemies.applyArea(V(player.position.x + fwd.x * 5, player.position.z + fwd.z * 5), 4.5, DMG(0.15), {});
     }
     game.endLag = 0;
-  } else game.endLag = 0.08;
+  } else game.endLag = isCombat ? 0.08 : 0.05;
 }
 
 // ------------------------------------------------------------

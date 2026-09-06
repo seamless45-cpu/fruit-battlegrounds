@@ -19,6 +19,11 @@ export class Input {
     this.isMobile = game.isMobile;
     this.joy = { x: 0, z: 0 };
     this.joyActive = false;
+    this.camYaw = 0;
+    this.camPitch = 0.52;
+    this.dragging = false;
+    this.dragDist = 0;
+    this._ptr = null;
 
     this._bind();
     this._bindJoystick();
@@ -33,21 +38,42 @@ export class Input {
       this.held = {};
     });
 
-    if (!this.isMobile) {
-      window.addEventListener('mousemove', (e) => this._setNDC(e.clientX, e.clientY));
-      this.canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 0) { this._setNDC(e.clientX, e.clientY); this.game.requestCastM1(); }
-      });
-      this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    } else {
-      this.canvas.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1) return;
-        const t = e.touches[0]; this._setNDC(t.clientX, t.clientY); this.game.requestCastM1();
-      }, { passive: true });
-      this.canvas.addEventListener('touchmove', (e) => {
-        const t = e.touches[0]; this._setNDC(t.clientX, t.clientY);
-      }, { passive: true });
-    }
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('mousemove', (e) => {
+      if (this.dragging) return;
+      this._setNDC(e.clientX, e.clientY);
+    });
+
+    this.canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      this._ptr = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      this.dragging = false;
+      this.dragDist = 0;
+      this._setNDC(e.clientX, e.clientY);
+      try { this.canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (!this._ptr || e.pointerId !== this._ptr.id) return;
+      const dx = e.clientX - this._ptr.x;
+      const dy = e.clientY - this._ptr.y;
+      this.dragDist += Math.hypot(dx, dy);
+      this._ptr.x = e.clientX; this._ptr.y = e.clientY;
+      if (this.dragDist > 8) this.dragging = true;
+      if (this.dragging) {
+        this.camYaw -= dx * 0.005;
+        this.camPitch = Math.max(0.18, Math.min(1.2, this.camPitch - dy * 0.004));
+      }
+      this._setNDC(e.clientX, e.clientY);
+    });
+    const endPtr = (e) => {
+      if (!this._ptr || (e.pointerId != null && e.pointerId !== this._ptr.id)) return;
+      const wasDrag = this.dragging;
+      this._ptr = null;
+      this.dragging = false;
+      if (!wasDrag && this.game.playing) this.game.requestCastM1();
+    };
+    this.canvas.addEventListener('pointerup', endPtr);
+    this.canvas.addEventListener('pointercancel', () => { this._ptr = null; this.dragging = false; });
   }
 
   _bindJoystick() {
@@ -105,14 +131,15 @@ export class Input {
 
   onKeyDown(e) {
     const k = e.key.toLowerCase();
+    if (!this.game.playing && k !== 'escape') return;
     this.keys.add(k);
     if (e.code === 'Space') { e.preventDefault(); this.game.player.jump(); return; }
     if (k === 'tab') { e.preventDefault(); this.game.toggleWeapon(); return; }
-    if (k === 'e') { this.game.collectFruit(); return; }
+    if (k === 'e') { this.game.interact(); return; }
     if (k === 'q') { this.game.toggleSail(); return; }
     if (k === 'escape') {
-      document.getElementById('settingsPanel').classList.add('hidden');
-      document.getElementById('helpPanel').classList.add('hidden');
+      ['settingsPanel', 'helpPanel', 'codesPanel', 'questPanel', 'dealerPanel', 'statsPanel', 'boatPanel']
+        .forEach((id) => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     }
 
     const idx = SKILL_KEYS.indexOf(k);
@@ -146,9 +173,11 @@ export class Input {
     if (this.keys.has('s') || this.keys.has('arrowdown')) z += 1;
     if (this.keys.has('a') || this.keys.has('arrowleft')) x -= 1;
     if (this.keys.has('d') || this.keys.has('arrowright')) x += 1;
-    const v = new THREE.Vector3(x, 0, z);
+    const yaw = this.camYaw;
+    const lookX = -Math.sin(yaw), lookZ = -Math.cos(yaw);
+    const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
+    const v = new THREE.Vector3(lookX * (-z) + rightX * x, 0, lookZ * (-z) + rightZ * x);
     if (v.lengthSq() > 1) v.normalize();
-    else if (v.lengthSq() > 0) { /* analog stick keeps magnitude */ }
     return v;
   }
 

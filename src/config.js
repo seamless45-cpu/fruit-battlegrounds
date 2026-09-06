@@ -141,6 +141,7 @@ export const SWORDS = {
   bisento: {
     id: 'bisento', name: 'Bisento', emoji: '🪓', color: COLORS.bisento, isSword: true,
     blurb: 'Heavy cleaver, ground smasher.',
+    m1: { id: 'bi_m1', label: 'Cleave', cd: 0.26, desc: 'Wide heavy chops with a generous hitbox.' },
     skills: [
       { id: 'bi_slam', label: 'Quake Slam',    cd: 2, desc: 'Slam: shockwave + debris, stun 2.5s, knockback.' },
       { id: 'bi_ball', label: 'Quake Ball',    cd: 3, desc: 'Small quake orbs that explode on hit.' },
@@ -225,8 +226,36 @@ export const PLAYER = {
 };
 export const ENEMY = { maxHp: 500, speed: 6, radius: 1.0, touchDamage: 8, spawnEvery: 2.0, maxAlive: 16 };
 
+export const MELEE = {
+  combat:        { reach: 6.2, width: 3.6, height: 4.8, dmg: 0.16 },
+  gravityblade:  { reach: 8.6, width: 4.2, height: 5.2, dmg: 0.22 },
+  pole:          { reach: 9.8, width: 3.0, height: 5.0, dmg: 0.18 },
+  bisento:       { reach: 8.4, width: 4.6, height: 5.2, dmg: 0.24 },
+  cutlass:       { reach: 7.0, width: 3.8, height: 4.8, dmg: 0.18 },
+  katana:        { reach: 7.4, width: 3.4, height: 4.8, dmg: 0.19 },
+  trident:       { reach: 9.4, width: 2.8, height: 5.0, dmg: 0.20 },
+  darkblade:     { reach: 8.8, width: 4.4, height: 5.2, dmg: 0.24 },
+};
+
 export const WORLD = {
   islandRadius: 86,
   oceanRadius: 280,
   dock: { x: 0, z: 90, radius: 14 },
+  questNpc: { x: 16, z: 22, radius: 4.2 },
 };
+
+export const GIFT_CODES = {
+  WELCOME:      { tokens: 1000, xp: 0, message: 'Welcome bounty: 1,000 money.' },
+  BERRY:        { tokens: 5000, xp: 0, message: 'Berry crate opened: 5,000 money.' },
+  FRUITBATTLES: { tokens: 2000, xp: 150, message: 'Arena stipend: 2,000 money and 150 XP.' },
+  SKYHIGH:      { tokens: 400, xp: 80, message: 'Sky-high bonus: 400 money and 80 XP.' },
+  DOCKHAND:     { tokens: 0, xp: 0, boat: 'raft', message: 'The shipwright left you a Raft.' },
+  LEVELUP:      { tokens: 0, xp: 400, message: 'Training manual: 400 XP.' },
+};
+
+export const QUESTS = [
+  { id: 'kills5', title: 'First Blood', desc: 'Defeat 5 pirates in the arena.', stat: 'kills', need: 5, reward: { tokens: 400, xp: 80 } },
+  { id: 'kills25', title: 'Arena Heat', desc: 'Defeat 25 pirates.', stat: 'kills', need: 25, reward: { tokens: 1800, xp: 320 } },
+  { id: 'fruit1', title: 'Fruit Hunt', desc: 'Collect or buy any fruit.', stat: 'fruits', need: 1, reward: { tokens: 700, xp: 120 } },
+  { id: 'boat1', title: 'Sea Legs', desc: 'Purchase any boat from the Shipwright.', stat: 'boats', need: 1, reward: { tokens: 900, xp: 150 } },
+];

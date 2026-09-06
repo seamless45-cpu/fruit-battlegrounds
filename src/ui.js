@@ -1,7 +1,7 @@
 // ============================================================
-//  Reworked HUD, dealers, single-value stats, joystick chrome.
+//  Reworked HUD, dealers, menu, gifts, quests, motion.
 // ============================================================
-import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES } from './config.js';
+import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES, QUESTS } from './config.js';
 
 export class UI {
   constructor(game) {
@@ -10,10 +10,35 @@ export class UI {
     this.onScreen = !game.isMobile;
   }
 
+  showMainMenu() {
+    const loader = document.getElementById('loader');
+    loader.classList.add('is-menu');
+    document.getElementById('loaderActions').classList.remove('hidden');
+    document.getElementById('menuStats').classList.remove('hidden');
+    this.setTokens(this.game.tokens);
+    this.setLevel(this.game.level, this.game.xp, this.game.xpToNext);
+  }
+
   showGameUI() {
     ['topbar', 'hpHud', 'inventory', 'skillbar', 'crosshair', 'settingsBtn', 'helpBtn', 'utilityBar', 'joyWrap', 'jumpBtn', 'sailBtn']
       .forEach((id) => { const el = document.getElementById(id); if (el) el.classList.remove('hidden'); });
     document.getElementById('loader').classList.add('hidden');
+  }
+
+  togglePanel(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.classList.contains('hidden')) this.openPanel(id);
+    else this.closePanel(id);
+  }
+  openPanel(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('hidden');
+  }
+  closePanel(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
   }
 
   buildInventory() {
@@ -164,25 +189,47 @@ export class UI {
     body.appendChild(toggle('Particles', 'particles'));
     body.appendChild(slider('Resolution Scale', 'pixelRatioScale', 0.5, 1.5, 0.05));
 
-    document.getElementById('settingsBtn').addEventListener('click', () => document.getElementById('settingsPanel').classList.toggle('hidden'));
-    document.getElementById('setClose').addEventListener('click', () => document.getElementById('settingsPanel').classList.add('hidden'));
-    document.getElementById('helpBtn').addEventListener('click', () => document.getElementById('helpPanel').classList.toggle('hidden'));
-    document.getElementById('helpClose').addEventListener('click', () => document.getElementById('helpPanel').classList.add('hidden'));
+    const openSettings = () => this.togglePanel('settingsPanel');
+    document.getElementById('settingsBtn').addEventListener('click', openSettings);
+    document.getElementById('menuSettingsBtn').addEventListener('click', openSettings);
+    document.getElementById('setClose').addEventListener('click', () => this.closePanel('settingsPanel'));
+    document.getElementById('helpBtn').addEventListener('click', () => this.togglePanel('helpPanel'));
+    document.getElementById('helpClose').addEventListener('click', () => this.closePanel('helpPanel'));
     document.getElementById('skillClose').addEventListener('click', () => this.closeSkillBar());
     document.getElementById('skillReopen').addEventListener('click', () => this.openSkillBar());
+    document.getElementById('playBtn').addEventListener('click', () => this.game.startPlay());
   }
 
   buildProgressionPanels() {
-    document.getElementById('dealerBtn').addEventListener('click', () => { document.getElementById('dealerPanel').classList.toggle('hidden'); this.renderDealerStock(); });
-    document.getElementById('dealerClose').addEventListener('click', () => document.getElementById('dealerPanel').classList.add('hidden'));
-    document.getElementById('statsBtn').addEventListener('click', () => { document.getElementById('statsPanel').classList.toggle('hidden'); this.refreshStats(); });
-    document.getElementById('statsClose').addEventListener('click', () => document.getElementById('statsPanel').classList.add('hidden'));
-    document.getElementById('boatBtn').addEventListener('click', () => { document.getElementById('boatPanel').classList.toggle('hidden'); this.renderBoatShop(); });
-    document.getElementById('boatClose').addEventListener('click', () => document.getElementById('boatPanel').classList.add('hidden'));
+    document.getElementById('dealerBtn').addEventListener('click', () => { this.togglePanel('dealerPanel'); this.renderDealerStock(); });
+    document.getElementById('dealerClose').addEventListener('click', () => this.closePanel('dealerPanel'));
+    document.getElementById('statsBtn').addEventListener('click', () => { this.togglePanel('statsPanel'); this.refreshStats(); });
+    document.getElementById('statsClose').addEventListener('click', () => this.closePanel('statsPanel'));
+    document.getElementById('boatBtn').addEventListener('click', () => { this.togglePanel('boatPanel'); this.renderBoatShop(); });
+    document.getElementById('boatClose').addEventListener('click', () => this.closePanel('boatPanel'));
+    document.getElementById('codesBtn').addEventListener('click', () => this.togglePanel('codesPanel'));
+    document.getElementById('menuCodesBtn').addEventListener('click', () => this.togglePanel('codesPanel'));
+    document.getElementById('codesClose').addEventListener('click', () => this.closePanel('codesPanel'));
+    document.getElementById('codesForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('codeInput');
+      const result = this.game.redeemCode(input.value);
+      this.toast(result.message);
+      if (result.ok) input.value = '';
+    });
+    document.getElementById('questBtn').addEventListener('click', () => { this.togglePanel('questPanel'); this.renderQuests(); });
+    document.getElementById('questClose').addEventListener('click', () => this.closePanel('questPanel'));
+    const talkBtn = document.getElementById('talkBtn');
+    if (talkBtn) {
+      talkBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        this.game.talkToNpc();
+      });
+    }
     ['health', 'fruit', 'sword', 'fighting'].forEach((type) => {
       document.getElementById(`${type}StatBuy`).addEventListener('click', () => this.game.allocateStat(type));
     });
-    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats();
+    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats(); this.renderQuests();
   }
 
   renderDealerStock() {
@@ -190,8 +237,8 @@ export class UI {
     this.game.dealer.stock.forEach((id) => {
       const fruit = FRUITS[id], price = FRUIT_DEALER.prices[id];
       const card = document.createElement('button'); card.className = 'dealer-card'; card.disabled = this.game.ownedFruits.has(id);
-      card.innerHTML = `<span>${fruit.emoji}</span><b>${fruit.name}</b><small>${card.disabled ? 'Owned' : `${price.toLocaleString()} tokens`}</small>`;
-      card.addEventListener('click', () => { const result = this.game.dealer.buy(id, this.game); this.setTokens(this.game.tokens); this.refreshInventory(); this.renderDealerStock(); this.toast(result.message); });
+      card.innerHTML = `<span>${fruit.emoji}</span><b>${fruit.name}</b><small>${card.disabled ? 'Owned' : `${price.toLocaleString()} money`}</small>`;
+      card.addEventListener('click', () => { const result = this.game.dealer.buy(id, this.game); this.setTokens(this.game.tokens); this.refreshInventory(); this.renderDealerStock(); this.renderQuests(); this.toast(result.message); });
       stock.appendChild(card);
     });
   }
@@ -203,10 +250,10 @@ export class UI {
       const selected = this.game.selectedBoat === b.id;
       const card = document.createElement('button');
       card.className = 'dealer-card' + (selected ? ' selected' : '');
-      card.innerHTML = `<span>${b.emoji}</span><b>${b.name}</b><small>${owned ? (selected ? 'Selected' : 'Owned — select') : `${b.price.toLocaleString()} tokens`}</small>`;
+      card.innerHTML = `<span>${b.emoji}</span><b>${b.name}</b><small>${owned ? (selected ? 'Selected' : 'Owned — select') : `${b.price.toLocaleString()} money`}</small>`;
       card.addEventListener('click', () => {
         const result = this.game.shipwright.buyBoat(b.id, this.game);
-        this.setTokens(this.game.tokens); this.renderBoatShop(); this.toast(result.message);
+        this.setTokens(this.game.tokens); this.renderBoatShop(); this.renderQuests(); this.toast(result.message);
       });
       boats.appendChild(card);
     });
@@ -214,13 +261,55 @@ export class UI {
     Object.values(SWORDS).forEach((s) => {
       const owned = this.game.ownedSwords.has(s.id);
       const card = document.createElement('button'); card.className = 'dealer-card'; card.disabled = owned;
-      card.innerHTML = `<span>${s.emoji}</span><b>${s.name}</b><small>${owned ? 'Owned' : `${SWORD_PRICES[s.id].toLocaleString()} tokens`}</small>`;
+      card.innerHTML = `<span>${s.emoji}</span><b>${s.name}</b><small>${owned ? 'Owned' : `${SWORD_PRICES[s.id].toLocaleString()} money`}</small>`;
       card.addEventListener('click', () => {
         const result = this.game.shipwright.buySword(s.id, this.game);
         this.setTokens(this.game.tokens); this.refreshInventory(); this.renderBoatShop(); this.toast(result.message);
       });
       swords.appendChild(card);
     });
+  }
+
+  renderQuests() {
+    const list = document.getElementById('questList');
+    if (!list) return;
+    list.innerHTML = '';
+    const g = this.game;
+    QUESTS.forEach((q) => {
+      const have = g.questStats[q.stat] || 0;
+      const claimed = g.claimedQuests.has(q.id);
+      const ready = !claimed && have >= q.need;
+      const card = document.createElement('div');
+      card.className = 'quest-card' + (claimed ? ' claimed' : ready ? ' done' : '');
+      const pct = Math.min(100, (have / q.need) * 100);
+      card.innerHTML = `
+        <h4>${q.title}</h4>
+        <p>${q.desc}</p>
+        <div class="quest-prog"><i style="width:${pct}%"></i></div>
+        <p>${Math.min(have, q.need)} / ${q.need} · Reward ${q.reward.tokens ? q.reward.tokens.toLocaleString() + ' money' : ''}${q.reward.tokens && q.reward.xp ? ' + ' : ''}${q.reward.xp ? q.reward.xp + ' XP' : ''}</p>
+        <button class="quest-claim" type="button" ${ready ? '' : 'disabled'}>${claimed ? 'Claimed' : ready ? 'Claim' : 'In progress'}</button>`;
+      const btn = card.querySelector('.quest-claim');
+      btn.addEventListener('click', () => {
+        const result = this.game.claimQuest(q.id);
+        this.toast(result.message);
+        this.renderQuests();
+      });
+      list.appendChild(card);
+    });
+  }
+
+  setPrompt(text) {
+    const el = document.getElementById('prompt');
+    const talk = document.getElementById('talkBtn');
+    if (!text) {
+      el.classList.add('hidden'); el.textContent = '';
+      if (talk) talk.classList.add('hidden');
+      return;
+    }
+    el.textContent = text;
+    el.classList.remove('hidden');
+    if (talk && /quest|talk/i.test(text)) talk.classList.remove('hidden');
+    else if (talk) talk.classList.add('hidden');
   }
 
   refreshStats() {
@@ -256,9 +345,19 @@ export class UI {
   setLevel(level, xp, needed) {
     document.getElementById('levelCount').textContent = level.toLocaleString();
     document.getElementById('xpFill').style.width = Math.max(0, Math.min(1, xp / needed)) * 100 + '%';
-    document.getElementById('xpCount').textContent = `${Math.floor(xp).toLocaleString()} / ${Math.floor(needed).toLocaleString()}`;
+    const label = `${Math.floor(xp).toLocaleString()} / ${Math.floor(needed).toLocaleString()}`;
+    document.getElementById('xpCount').textContent = label;
+    const menu = document.getElementById('menuXp');
+    if (menu) menu.textContent = label;
   }
-  setTokens(n) { document.getElementById('tokenCount').textContent = Math.floor(n).toLocaleString(); }
+  setTokens(n) {
+    const v = Math.floor(n).toLocaleString();
+    document.getElementById('tokenCount').textContent = v;
+    const money = document.getElementById('moneyCount');
+    if (money) money.textContent = v;
+    const menu = document.getElementById('menuMoney');
+    if (menu) menu.textContent = v;
+  }
   setKills(n) { document.getElementById('killCount').textContent = n; }
   setFps(n) { document.getElementById('fpsCount').textContent = Math.round(n); }
   setJumps(n, max, onGround) {
@@ -272,6 +371,9 @@ export class UI {
   toast(msg, ms = 2200) {
     const t = document.getElementById('toast');
     t.textContent = msg; t.classList.remove('hidden'); t.style.opacity = '1';
+    t.style.animation = 'none';
+    void t.offsetWidth;
+    t.style.animation = '';
     clearTimeout(this._toastT);
     this._toastT = setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.classList.add('hidden'), 300); }, ms);
   }

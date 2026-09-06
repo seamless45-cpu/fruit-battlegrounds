@@ -35,6 +35,7 @@ export class BoatDealer {
     game.tokens -= def.price;
     game.ownedBoats.add(id);
     game.selectedBoat = id;
+    if (game.noteQuest) game.noteQuest('boats');
     return { ok: true, message: `${def.name} is yours! Head to the dock and press Sail.` };
   }
   buySword(id, game) {
@@ -67,6 +68,9 @@ export class FruitSpawner {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.18, 0.05, 6, 20), new THREE.MeshBasicMaterial({ color: FRUITS[id].color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending }));
     ring.rotation.x = Math.PI / 2; mesh.add(fruit, ring); mesh.position.set((tree?.x || 0) + Math.cos(angle) * radius, 1.25, (tree?.z || 0) + Math.sin(angle) * radius);
     this.scene.add(mesh); this.active.push({ id, mesh, life: FRUIT_SPAWNS.lifetimeSeconds });
+  }
+  nearFruit(position, distance = 3.4) {
+    return this.active.some((item) => item.mesh.position.distanceTo(position) <= distance);
   }
   collectNearby(position, distance = 3.4) {
     const fruit = this.active.find((item) => item.mesh.position.distanceTo(position) <= distance);

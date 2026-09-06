@@ -9,7 +9,7 @@ import { FX } from './effects.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
 import { castSkill, castM1, tickHeld, releaseHeld } from './skills.js';
-import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER, BOATS } from './config.js';
+import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER, BOATS, GIFT_CODES, QUESTS } from './config.js';
 import { FruitDealer, FruitSpawner, BoatDealer, validateGameState } from './progression.js';
 import { createSwordMesh } from './models.js';
 
@@ -43,12 +43,20 @@ const flash = document.createElement('div');
 flash.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:80;opacity:0;background:#000;';
 document.getElementById('app').appendChild(flash);
 
+function loadRedeemed() {
+  try { return new Set(JSON.parse(localStorage.getItem('fb_gift_codes') || '[]')); }
+  catch { return new Set(); }
+}
+
 const game = {
-  isMobile,
+  isMobile, playing: false,
   world, fx, player, enemies, dealer, shipwright, fruitSpawner, scene: world.scene,
   equippedFruit: null, equippedSword: null, equippedStyle: 'combat', activeWeapon: 'style',
   cooldowns: {},
   tokens: 0, kills: 0,
+  questStats: { kills: 0, fruits: 0, boats: 0 },
+  claimedQuests: new Set(),
+  redeemed: loadRedeemed(),
   level: 1, xp: 0, xpToNext: 100,
   statPoints: 0, stats: { health: 0, fruit: 0, sword: 0, fighting: 0 },
   ownedFruits: new Set(), ownedSwords: new Set(), ownedBoats: new Set(), selectedBoat: null,
@@ -89,14 +97,72 @@ game.refreshCombatBonus = () => {
   player.damageBonus = stat * 0.05;
 };
 
-game.collectFruit = () => {
+game.collectFruit = () => game.interact();
+
+game.interact = () => {
+  if (!game.playing) return;
   const id = fruitSpawner.collectNearby(player.position);
-  if (!id) return ui.toast('No spawned fruit is close enough to collect.');
-  if (game.ownedFruits.has(id)) return ui.toast(`${FRUITS[id].name} was already in your inventory.`);
-  game.ownedFruits.add(id); ui.refreshInventory(); ui.toast(`Found ${FRUITS[id].emoji} ${FRUITS[id].name}!`);
+  if (id) {
+    if (game.ownedFruits.has(id)) return ui.toast(`${FRUITS[id].name} was already in your inventory.`);
+    game.ownedFruits.add(id);
+    game.noteQuest('fruits');
+    ui.refreshInventory(); ui.renderQuests();
+    ui.toast(`Found ${FRUITS[id].emoji} ${FRUITS[id].name}!`);
+    return;
+  }
+  if (world.nearQuestNpc(player.position)) { game.talkToNpc(); return; }
+  ui.toast('Nothing nearby. Find the gold-cloaked quest giver or a world fruit.');
+};
+
+game.talkToNpc = () => {
+  if (!game.playing) return;
+  ui.openPanel('questPanel');
+  ui.renderQuests();
+  ui.toast('The quest giver unrolls a bounty board.');
+};
+
+game.noteQuest = (stat, n = 1) => {
+  game.questStats[stat] = (game.questStats[stat] || 0) + n;
+  if (ui) ui.renderQuests();
+};
+
+game.claimQuest = (id) => {
+  const q = QUESTS.find((x) => x.id === id);
+  if (!q) return { ok: false, message: 'Unknown quest.' };
+  if (game.claimedQuests.has(id)) return { ok: false, message: 'Already claimed.' };
+  if ((game.questStats[q.stat] || 0) < q.need) return { ok: false, message: 'Quest not finished yet.' };
+  game.claimedQuests.add(id);
+  if (q.reward.tokens) game.tokens += q.reward.tokens;
+  if (q.reward.xp) addXp(q.reward.xp);
+  ui.setTokens(game.tokens);
+  ui.renderQuests();
+  return { ok: true, message: `Quest complete: ${q.title}!` };
+};
+
+game.redeemCode = (raw) => {
+  const code = String(raw || '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!code) return { ok: false, message: 'Enter a gift code.' };
+  const def = GIFT_CODES[code];
+  if (!def) return { ok: false, message: 'Unknown code.' };
+  if (game.redeemed.has(code)) return { ok: false, message: 'Already redeemed.' };
+  game.redeemed.add(code);
+  try { localStorage.setItem('fb_gift_codes', JSON.stringify([...game.redeemed])); } catch (_) {}
+  if (def.tokens) game.tokens += def.tokens;
+  if (def.xp) addXp(def.xp);
+  if (def.boat && BOATS[def.boat]) {
+    const first = !game.ownedBoats.has(def.boat);
+    game.ownedBoats.add(def.boat);
+    if (!game.selectedBoat) game.selectedBoat = def.boat;
+    if (first) game.noteQuest('boats');
+  }
+  ui.setTokens(game.tokens);
+  if (ui.renderBoatShop) ui.renderBoatShop();
+  ui.renderQuests();
+  return { ok: true, message: def.message };
 };
 
 game.toggleSail = () => {
+  if (!game.playing) return;
   if (player.mountedBoat) {
     player.dismountBoat();
     ui.toast('You hop off the boat.');
@@ -106,15 +172,18 @@ game.toggleSail = () => {
   if (!id) return ui.toast('Buy a boat from the Shipwright, then sail from the southern dock.');
   const onLand = world.isOnLand(player.position.x, player.position.z);
   if (onLand && !world.nearDock(player.position)) return ui.toast('Go to the southern dock to set sail.');
-  player.mountBoat(game.shipwright && { ...null });
-  const def = (awaitBoat(id));
+  const def = BOATS[id];
+  if (!def) return ui.toast('Unknown vessel.');
   player.mountBoat(def);
   ui.toast(`Sailing the ${def.name}! Jump or press Q to hop off.`);
 };
 
-function awaitBoat(id) {
-  return { raft: { id: 'raft', name: 'Raft', speed: 20, color: 0xc4a574 }, dinghy: { id: 'dinghy', name: 'Dinghy', speed: 28, color: 0xd8c8a0 }, sloop: { id: 'sloop', name: 'Sloop', speed: 38, color: 0x8ab4ff }, galleon: { id: 'galleon', name: 'Galleon', speed: 50, color: 0xc9a227 } }[id];
-}
+game.startPlay = () => {
+  if (game.playing) return;
+  game.playing = true;
+  ui.showGameUI();
+  ui.toast('WASD or joystick • drag to look • tap to attack • E talk to quests', 4800);
+};
 
 function activeWeaponDef() {
   if (game.activeWeapon === 'sword') return SWORDS[game.equippedSword] || null;
@@ -179,6 +248,7 @@ game.skillIdForIndex = (idx) => {
 };
 
 game.requestCast = (id) => {
+  if (!game.playing) return;
   const cd = game.cooldowns[id];
   if (!cd || cd.remaining > 0) return;
   const weapon = activeWeaponDef();
@@ -189,6 +259,7 @@ game.requestCast = (id) => {
 };
 
 game.requestCastM1 = () => {
+  if (!game.playing) return;
   const weapon = activeWeaponDef();
   if (!weapon || !weapon.m1) return;
   const cd = game.cooldowns[weapon.m1.id];
@@ -237,11 +308,7 @@ function onPlayerHit(dmg) {
     fx.shake(1, 3);
   }
 }
-function onKill(e) {
-  game.kills += 1;
-  const tk = (10 + Math.floor(Math.random() * 91)) * (e.tier || 1);
-  game.tokens += tk;
-  const xpGain = Math.round(22 + e.maxHp * 0.08);
+function addXp(xpGain) {
   game.xp += xpGain;
   let leveled = false;
   while (game.xp >= game.xpToNext && game.level < PLAYER.maxLevel) {
@@ -254,10 +321,23 @@ function onKill(e) {
     game.statPoints += 3;
     leveled = true;
   }
+  ui.setLevel(game.level, game.xp, game.xpToNext); ui.refreshStats();
+  if (leveled) {
+    fx.pillar({ x: player.position.x, z: player.position.z, height: 36, color: 0xffd56b, duration: 1.2, rings: 5 });
+    fx.shake(0.45, 1.6);
+    ui.toast(`LEVEL UP! You are now Lv ${game.level}. Full HP restored.`, 3000);
+  }
+  return leveled;
+}
+
+function onKill(e) {
+  game.kills += 1;
+  game.noteQuest('kills');
+  const tk = (10 + Math.floor(Math.random() * 91)) * (e.tier || 1);
+  game.tokens += tk;
+  addXp(Math.round(22 + e.maxHp * 0.08));
   if (game.equippedSword === 'gravityblade') game.upgrades.gb_super.charge = Math.min(1, game.upgrades.gb_super.charge + 0.1);
   ui.setKills(game.kills); ui.setTokens(game.tokens);
-  ui.setLevel(game.level, game.xp, game.xpToNext); ui.refreshStats();
-  if (leveled) { fx.pillar({ x: player.position.x, z: player.position.z, height: 36, color: 0xffd56b, duration: 1.2, rings: 5 }); fx.shake(0.45, 1.6); ui.toast(`LEVEL UP! You are now Lv ${game.level}. Full HP restored.`, 3000); }
 }
 
 function applyBloom() {
@@ -266,13 +346,18 @@ function applyBloom() {
 }
 game.applyBloom = applyBloom;
 
-const camOffset = new THREE.Vector3(0, 18, 28);
 const camTarget = new THREE.Vector3();
-const _basePos = new THREE.Vector3();
 
 function updateCamera() {
-  _basePos.copy(player.position).add(camOffset);
-  camera.position.copy(_basePos);
+  const dist = 33;
+  const yaw = input.camYaw;
+  const pitch = input.camPitch;
+  const cy = Math.cos(pitch), sy = Math.sin(pitch);
+  camera.position.set(
+    player.position.x + Math.sin(yaw) * cy * dist,
+    player.position.y + sy * dist + 2,
+    player.position.z + Math.cos(yaw) * cy * dist,
+  );
   camTarget.copy(player.position); camTarget.y += 2.2;
   camera.lookAt(camTarget);
   camera.position.add(fx.shakeOffset);
@@ -301,12 +386,16 @@ const reticle = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.8, 24),
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
 reticle.rotation.x = -Math.PI / 2; reticle.position.y = 0.05; world.scene.add(reticle);
 
-ui.showGameUI();
 setLoad(92, 'Enabling bloom…');
-tryEnableBloom(world).then(() => { applyBloom(); setLoad(100, 'Ready!'); });
-setTimeout(() => setLoad(100, 'Ready!'), 400);
-
-ui.toast('WASD or joystick • Space jump (20 air) • LMB attack • Z–F skills • Q sail • Tab swap', 4800);
+let menuReady = false;
+function readyMenu() {
+  if (menuReady) return;
+  menuReady = true;
+  setLoad(100, 'Ready!');
+  ui.showMainMenu();
+}
+tryEnableBloom(world).then(() => { applyBloom(); readyMenu(); });
+setTimeout(readyMenu, 500);
 
 let last = performance.now();
 let fpsAcc = 0, fpsCount = 0, fpsTimer = 0;
@@ -320,6 +409,17 @@ function loopBody() {
   const now = performance.now();
   let dt = (now - last) / 1000; last = now;
   if (dt > 0.05) dt = 0.05;
+
+  if (!game.playing) {
+    input.camYaw += dt * 0.08;
+    player.update(dt, new THREE.Vector3());
+    fx.particles = world.gfx.particles;
+    fx.update(dt);
+    world.update(dt, now / 1000);
+    updateCamera();
+    world.render();
+    return;
+  }
 
   const move = input.moveVector();
   player.update(dt, move);
@@ -352,6 +452,10 @@ function loopBody() {
 
   const aim = input.aimPoint(new THREE.Vector3());
   reticle.position.x = aim.x; reticle.position.z = aim.z;
+
+  if (world.nearQuestNpc(player.position)) ui.setPrompt('E — Talk to Quest Giver');
+  else if (fruitSpawner.nearFruit(player.position)) ui.setPrompt('E — Collect fruit');
+  else ui.setPrompt('');
 
   ui.updateSkillBar(dt);
   ui.setHp(player.hp / player.maxHp);

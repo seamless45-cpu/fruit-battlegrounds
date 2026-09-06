@@ -378,20 +378,22 @@ export class FX {
     });
   }
 
-  slashFx(x, y, z, color = 0xffffff, facing = 0) {
+  slashFx(x, y, z, color = 0xffffff, facing = 0, reach = 6) {
     const s = this.slashes.take();
     if (!s) return;
-    s.position.set(x + Math.sin(facing) * 1.6, y, z + Math.cos(facing) * 1.6);
+    const push = Math.min(3.2, reach * 0.32);
+    s.position.set(x + Math.sin(facing) * push, y, z + Math.cos(facing) * push);
     s.material.color.setHex(color);
     s.material.rotation = -facing;
     s.material.opacity = 0.95;
-    s.scale.set(4.2, 2.2, 1);
+    const sx = 3.4 + reach * 0.28;
+    s.scale.set(sx, 2.2, 1);
     let t = 0;
     this.add({
       update: (dt) => {
         t += dt;
         s.material.opacity = 0.95 * (1 - t / 0.16);
-        s.scale.x = 4.2 + t * 10;
+        s.scale.x = sx + t * 12;
         return t < 0.16;
       },
       dispose: () => this.slashes.give(s),

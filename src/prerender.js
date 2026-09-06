@@ -126,9 +126,9 @@ export function bakeVfxAtlas() {
 
 export function bakeWaterTex() {
   return bakeTexture(256, (ctx, s) => {
-    ctx.fillStyle = '#0a3d62';
+    ctx.fillStyle = '#1a88b8';
     ctx.fillRect(0, 0, s, s);
-    ctx.strokeStyle = 'rgba(160,220,255,0.18)';
+    ctx.strokeStyle = 'rgba(230,250,255,0.28)';
     ctx.lineWidth = 2;
     for (let i = 0; i < 16; i++) {
       ctx.beginPath();
