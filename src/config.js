@@ -55,6 +55,13 @@ export const FRUITS = {
   },
 };
 
+export const FRUIT_DEALER = {
+  refreshSeconds: 600,
+  slots: 3,
+  prices: { gravity: 2400, lightning: 1800, quake: 1400 },
+};
+export const FRUIT_SPAWNS = { intervalSeconds: 1800, lifetimeSeconds: 900, maxActive: 3 };
+
 // ============================================================
 //  SWORDS
 // ============================================================
@@ -71,7 +78,7 @@ export const SWORDS = {
     ],
   },
   pole: {
-    id: 'pole', name: 'Pole', emoji: '� pole'.replace(' ',''), color: COLORS.pole, isSword: true,
+    id: 'pole', name: 'Pole', emoji: '🔱', color: COLORS.pole, isSword: true,
     blurb: 'Long reach, lightning-follow.',
     m1: { id: 'p_m1', label: '3-Combo', cd: 0.1, desc: '3-combo slash; combo 4 strikes small bolt. No end-lag.' },
     skills: [
@@ -100,5 +107,5 @@ export const INVENTORY_ITEMS = [
   { id: 'bisento',      type: 'sword', ref: SWORDS.bisento,  emoji: SWORDS.bisento.emoji,  color: COLORS.bisento },
 ];
 
-export const PLAYER = { maxHp: 2000, speed: 14, radius: 1.2 };
+export const PLAYER = { maxHp: 2000, speed: 14, radius: 1.2, maxLevel: 100000 };
 export const ENEMY = { maxHp: 500, speed: 6, radius: 1.0, touchDamage: 8, spawnEvery: 1.6, maxAlive: 24 };
