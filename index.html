@@ -1,1 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Fruit Battlegrounds 3D</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script>
+    // Friendly feedback if the 3D engine (Three.js) can't be fetched from the CDN.
+    window.addEventListener('error', function (e) {
+      var s = document.getElementById('loaderStatus');
+      if (s && /three|module|import|fetch|network/i.test(String(e.message || (e.target && e.target.src) || ''))) {
+        s.textContent = 'Could not load 3D engine — check your network/CDN access.';
+        s.style.color = '#ff8080';
+      }
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+      var s = document.getElementById('loaderStatus');
+      if (s) { s.textContent = 'Load error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason); s.style.color = '#ff8080'; }
+    });
+    setTimeout(function () {
+      var l = document.getElementById('loader');
+      var s = document.getElementById('loaderStatus');
+      if (l && !l.classList.contains('hidden') && s && /Booting|engine/i.test(s.textContent)) {
+        s.textContent = 'Still loading… if this persists, your browser/network may be blocking the CDN.';
+        s.style.color = '#ffd070';
+      }
+    }, 9000);
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
 
+    <!-- Loading screen -->
+    <div id="loader">
+      <div class="loader-box">
+        <div class="loader-title">FRUIT BATTLEGROUNDS</div>
+        <div class="loader-sub">3D Arena</div>
+        <div class="loader-bar"><div class="loader-bar-fill" id="loaderFill"></div></div>
+        <div class="loader-status" id="loaderStatus">Booting engine…</div>
+      </div>
+    </div>
+
+    <!-- Top bar: stats -->
+    <div id="topbar" class="hidden">
+      <div class="stat"><span class="stat-label">HP</span><div class="hpbar"><div class="hpfill" id="hpFill"></div></div></div>
+      <div class="stat">Tokens: <b id="tokenCount">0</b></div>
+      <div class="stat">Kills: <b id="killCount">0</b></div>
+      <div class="stat">FPS: <b id="fpsCount">0</b></div>
+    </div>
+
+    <!-- Inventory (bottom horizontal square slots) -->
+    <div id="inventory" class="hidden">
+      <div class="inv-title">INVENTORY — equip / unequip fruit &amp; sword (separated)</div>
+      <div class="inv-slots" id="invSlots"></div>
+      <div class="inv-hint">Click a slot to equip / unequip. Fruit and Sword are kept apart.</div>
+    </div>
+
+    <!-- Skill bar (middle right, compact, closable) -->
+    <div id="skillbar" class="hidden">
+      <div class="skillbar-head">
+        <span id="skillbarTitle">SKILLS</span>
+        <button id="skillClose" title="Close (C)">✕</button>
+      </div>
+      <div class="skill-list" id="skillList"></div>
+    </div>
+    <button id="skillReopen" class="hidden" title="Open skills">⚔ Skills</button>
+
+    <!-- Crosshair -->
+    <div id="crosshair" class="hidden"></div>
+
+    <!-- Graphics settings -->
+    <button id="settingsBtn" class="hidden" title="Graphics Settings">⚙</button>
+    <div id="settingsPanel" class="hidden">
+      <div class="set-head">
+        <span>ADVANCED GRAPHICS</span>
+        <button id="setClose">✕</button>
+      </div>
+      <div class="set-body" id="setBody"></div>
+    </div>
+
+    <!-- Toast / hint -->
+    <div id="toast" class="hidden"></div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

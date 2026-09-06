@@ -1,1 +1,83 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; font-family: 'Segoe UI', system-ui, sans-serif; color: #e7ecf5; user-select: none; }
+#app { position: fixed; inset: 0; }
+canvas#game { display: block; width: 100%; height: 100%; }
 
+.hidden { display: none !important; }
+
+/* ---------- Loader ---------- */
+#loader { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 40%, #141a2e, #05060a); z-index: 1000; }
+.loader-box { text-align: center; }
+.loader-title { font-size: 38px; font-weight: 800; letter-spacing: 4px; background: linear-gradient(90deg,#a06bff,#4cc6ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.loader-sub { font-size: 14px; letter-spacing: 6px; opacity: .6; margin-top: 4px; }
+.loader-bar { width: 320px; height: 8px; margin: 22px auto 8px; background: #1b2238; border-radius: 6px; overflow: hidden; }
+.loader-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#a06bff,#4cc6ff); transition: width .2s; }
+.loader-status { font-size: 12px; opacity: .6; }
+
+/* ---------- Top bar ---------- */
+#topbar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 18px; align-items: center; background: rgba(10,14,26,.7); padding: 8px 16px; border-radius: 12px; backdrop-filter: blur(8px); border: 1px solid #232c47; font-size: 13px; z-index: 50; }
+.stat { display: flex; align-items: center; gap: 6px; }
+.stat-label { opacity: .7; }
+.hpbar { width: 160px; height: 12px; background: #2a0d12; border-radius: 6px; overflow: hidden; border: 1px solid #4a1620; }
+.hpfill { height: 100%; width: 100%; background: linear-gradient(90deg,#ff4d6d,#ff8a5b); transition: width .15s; }
+
+/* ---------- Inventory (bottom horizontal square slots) ---------- */
+#inventory { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 50; background: rgba(10,14,26,.72); border: 1px solid #232c47; border-radius: 14px; padding: 10px 14px 8px; backdrop-filter: blur(8px); }
+.inv-title { font-size: 11px; letter-spacing: 1px; opacity: .65; text-align: center; margin-bottom: 8px; }
+.inv-slots { display: flex; gap: 12px; justify-content: center; }
+.inv-hint { font-size: 10px; opacity: .45; text-align: center; margin-top: 8px; }
+.slot { width: 64px; height: 64px; border-radius: 10px; background: #121829; border: 2px solid #2a3454; position: relative; cursor: pointer; transition: transform .1s, border-color .15s; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+.slot:hover { transform: translateY(-3px); border-color: #4cc6ff; }
+.slot.equipped { border-color: #a06bff; box-shadow: 0 0 14px rgba(160,107,255,.6); }
+.slot .slot-emoji { font-size: 26px; line-height: 1; }
+.slot .slot-name { font-size: 9px; margin-top: 4px; opacity: .8; text-align: center; }
+.slot .slot-type { position: absolute; top: 3px; left: 4px; font-size: 8px; letter-spacing: 1px; padding: 1px 4px; border-radius: 4px; text-transform: uppercase; }
+.slot .slot-type.fruit { background: #3a1d57; color: #d8b6ff; }
+.slot .slot-type.sword { background: #143a4a; color: #aee9ff; }
+.slot .equipped-mark { position: absolute; bottom: 3px; right: 4px; font-size: 9px; color: #a06bff; }
+
+/* ---------- Skill bar (middle right, compact) ---------- */
+#skillbar { position: fixed; top: 50%; right: 16px; transform: translateY(-50%); width: 230px; background: rgba(10,14,26,.82); border: 1px solid #2a3454; border-radius: 14px; padding: 8px; backdrop-filter: blur(8px); z-index: 50; }
+.skillbar-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 6px; border-bottom: 1px solid #232c47; }
+.skillbar-head span { font-size: 12px; letter-spacing: 2px; opacity: .8; }
+.skillbar-head button { background: #202a44; border: none; color: #cdd6ee; width: 20px; height: 20px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+.skillbar-head button:hover { background: #33406a; }
+.skill-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.skill-row { position: relative; display: flex; align-items: center; gap: 8px; height: 40px; background: #131a2c; border-radius: 9px; overflow: hidden; border: 1px solid #1e2740; }
+.skill-use { width: 40px; height: 40px; flex: 0 0 40px; background: linear-gradient(180deg,#3a2a6a,#241a44); border: none; color: #fff; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; border-right: 1px solid #2a3454; }
+.skill-use:active { transform: scale(.94); }
+.skill-key { position: absolute; top: 2px; left: 2px; font-size: 9px; background: #000a; padding: 0 3px; border-radius: 3px; color: #ffd; z-index: 3; }
+.skill-info { flex: 1; min-width: 0; padding-right: 6px; }
+.skill-name { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skill-meta { font-size: 9px; opacity: .55; }
+.skill-cd { position: absolute; left: 0; bottom: 0; height: 100%; width: 100%; background: rgba(0,0,0,.62); transform-origin: left; transform: scaleX(0); pointer-events: none; }
+.skill-cd-text { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #fff; opacity: .9; z-index: 2; }
+.skill-ready .skill-use { background: linear-gradient(180deg,#5a3aa0,#3a2a6a); }
+#skillReopen { position: fixed; top: 50%; right: 16px; transform: translateY(-50%); z-index: 50; background: rgba(10,14,26,.82); color: #e7ecf5; border: 1px solid #2a3454; border-radius: 12px; padding: 10px 12px; cursor: pointer; font-size: 12px; }
+
+/* ---------- Crosshair ---------- */
+#crosshair { position: fixed; top: 50%; left: 50%; width: 18px; height: 18px; transform: translate(-50%,-50%); pointer-events: none; z-index: 40; }
+#crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255,255,255,.7); }
+#crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+#crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+
+/* ---------- Settings ---------- */
+#settingsBtn { position: fixed; top: 12px; right: 12px; z-index: 50; width: 38px; height: 38px; border-radius: 10px; background: rgba(10,14,26,.82); border: 1px solid #2a3454; color: #e7ecf5; font-size: 18px; cursor: pointer; }
+#settingsPanel { position: fixed; top: 58px; right: 12px; width: 300px; max-height: 76vh; overflow-y: auto; background: rgba(10,14,26,.92); border: 1px solid #2a3454; border-radius: 14px; padding: 12px; z-index: 60; backdrop-filter: blur(10px); }
+.set-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; letter-spacing: 2px; opacity: .85; margin-bottom: 10px; }
+.set-head button { background: #202a44; border: none; color: #cdd6ee; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; }
+.set-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #1a2238; font-size: 12px; }
+.set-row select, .set-row input[type=range] { background: #131a2c; color: #e7ecf5; border: 1px solid #2a3454; border-radius: 6px; padding: 3px 6px; }
+.set-row input[type=checkbox] { width: 16px; height: 16px; }
+.seg { display: flex; gap: 4px; }
+.seg button { background: #131a2c; color: #cdd6ee; border: 1px solid #2a3454; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.seg button.active { background: #4cc6ff; color: #02121c; border-color: #4cc6ff; }
+
+/* ---------- Toast ---------- */
+#toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: rgba(10,14,26,.9); border: 1px solid #2a3454; padding: 8px 16px; border-radius: 10px; font-size: 13px; z-index: 70; transition: opacity .3s; max-width: 80vw; text-align: center; }
+
+/* ---------- Mobile / tablet: rely on on-screen use buttons ---------- */
+@media (pointer: coarse) {
+  .skill-key { display: none; }
+  .skill-use { font-size: 20px; }
+}
