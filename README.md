@@ -53,4 +53,32 @@ Fair gameplay is a top priority. Fruit Battlegrounds includes multiple anti-expl
 
 Players who attempt to exploit the game risk losing access to their accounts. Train your skills, master your fruit, and earn your victories through fair gameplay.
 
+📊 STATS SYSTEM
+
+Gain stat points every time you level up and customize your build to match your playstyle.
+
+❤️ Health
+• Increases maximum health
+• Every 1 Health Point grants +20 Health
+
+🍏 Fruit
+• Increases fruit attack power
+• Every 1 Fruit Point grants +20 Fruit Damage
+
+🔢 CUSTOM STAT ALLOCATION
+• Freely allocate your stat points using a custom input system
+• Type any number to invest the exact amount of points you want
+• Quickly spend hundreds, thousands, or even millions of available points at once
+• No need to repeatedly click "+" buttons
+• Changes are applied instantly after confirmation
+
+Examples:
+• Type 100 to spend 100 points
+• Type 1,000 to spend 1,000 points
+• Type 50,000 to spend 50,000 points
+
+Level Cap: 100,000
+
+With a maximum level of 100,000, players can create powerful builds and customize their stats exactly how they want using the custom allocation system.
+
 The battlegrounds await. Which fruit will you master on your journey to becoming the strongest fighter alive?
