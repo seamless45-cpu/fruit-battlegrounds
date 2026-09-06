@@ -11,6 +11,8 @@ export class Player {
     this.maxHp = PLAYER.maxHp;
     this.radius = PLAYER.radius;
     this.speed = PLAYER.speed;
+    this.level = 1;
+    this.damageBonus = 0;
     this.position = new THREE.Vector3(0, 0, 0);
     this.velocity = new THREE.Vector3();
     this.facing = 0;        // yaw
@@ -30,6 +32,14 @@ export class Player {
     this.aura = new THREE.Mesh(new THREE.SphereGeometry(1.9, 16, 12),
       new THREE.MeshBasicMaterial({ color: 0x9b30ff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.aura.position.y = 1.8; this.group.add(this.aura);
+    this.auraRings = [];
+    for (let i = 0; i < 2; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25 + i * 0.22, 0.035, 6, 32),
+        new THREE.MeshBasicMaterial({ color: 0xa06bff, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending, depthWrite: false }));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.25 + i * 0.18;
+      this.group.add(ring); this.auraRings.push(ring);
+    }
     // weapon arm anchor
     this.weaponAnchor = new THREE.Group();
     this.weaponAnchor.position.set(0.9, 1.8, 0.3);
@@ -39,7 +49,10 @@ export class Player {
     scene.add(this.group);
   }
 
-  setFruitColor(hex) { this.aura.material.color.setHex(hex); }
+  setFruitColor(hex) {
+    this.aura.material.color.setHex(hex);
+    this.auraRings.forEach((ring) => ring.material.color.setHex(hex));
+  }
   setWeaponMesh(mesh) {
     if (this.weaponMesh) this.weaponAnchor.remove(this.weaponMesh);
     this.weaponMesh = mesh;
@@ -61,6 +74,9 @@ export class Player {
     this.group.rotation.y = this.facing;
     // bob
     this.group.position.y = Math.sin(performance.now() * 0.008) * 0.06;
+    const pulse = 1 + Math.sin(performance.now() * 0.005) * 0.08;
+    this.aura.scale.setScalar(pulse);
+    this.auraRings.forEach((ring, i) => { ring.rotation.z += dt * (i ? -1.3 : 1.1); });
   }
 
   damage(dmg) {

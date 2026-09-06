@@ -498,11 +498,12 @@ const handlers = {
 export function castM1(game, weaponId) {
   const { fx, enemies, player } = game;
   const isBlade = weaponId === 'gravityblade';
+  const isCombat = weaponId === 'combat';
   game.m1Combo = (game.m1Combo || 0) + 1;
   if (game.m1Combo > 6) game.m1Combo = 1;
   // slash visual
   const slash = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 3.5),
-    new THREE.MeshBasicMaterial({ color: isBlade ? PURPLE : BLUE, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+    new THREE.MeshBasicMaterial({ color: isBlade ? PURPLE : isCombat ? 0xf0b36a : BLUE, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
   slash.position.copy(player.position); slash.position.y = 1.8;
   slash.rotation.y = player.facing;
   slash.position.add(new THREE.Vector3(Math.sin(player.facing) * 2, 0, Math.cos(player.facing) * 2));
@@ -527,13 +528,14 @@ export function castM1(game, weaponId) {
       });
     }
     game.endLag = 0.4;
-  } else {
+  } else if (!isCombat) {
     // pole: combo 4 -> small bolt
     if (game.m1Combo === 4) {
       fx.bolt({ x: player.position.x + fwd.x * 4, z: player.position.z + fwd.z * 4, height: 18, color: BLUE, life: 0.22 });
       enemies.applyArea(V(player.position.x + fwd.x * 4, player.position.z + fwd.z * 4), 4, DMG(0.15), {});
     }
     game.endLag = 0;
+  } else game.endLag = 0.08;
   }
 }
 

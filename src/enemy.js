@@ -19,7 +19,8 @@ export class EnemyManager {
     const a = Math.random() * Math.PI * 2;
     const r = 90 + Math.random() * 50;
     const pos = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
-    const hp = ENEMY.maxHp * (0.7 + Math.random() * 0.6);
+    const tier = r > 120 ? 3 : r > 105 ? 2 : 1;
+    const hp = ENEMY.maxHp * tier * (0.7 + Math.random() * 0.6);
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.8, 1.3, 4, 10),
       new THREE.MeshStandardMaterial({ color: 0x8a2f3a, roughness: 0.8 }));
@@ -27,6 +28,12 @@ export class EnemyManager {
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 10),
       new THREE.MeshStandardMaterial({ color: 0xc24a55, roughness: 0.7 }));
     head.position.y = 2.8; g.add(head);
+    const visor = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff526c, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }));
+    visor.scale.set(1.6, 0.38, 0.45); visor.position.set(0, 2.84, 0.45); g.add(visor);
+    const aura = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.05, 24),
+      new THREE.MeshBasicMaterial({ color: 0xff3f64, transparent: true, opacity: 0.45, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    aura.rotation.x = -Math.PI / 2; aura.position.y = 0.08; g.add(aura);
     // hp bar
     const barBg = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.25),
       new THREE.MeshBasicMaterial({ color: 0x220000 }));
@@ -39,9 +46,9 @@ export class EnemyManager {
     g.position.copy(pos);
     this.scene.add(g);
     this.enemies.push({
-      group: g, body, head, bar, barGroup,
+      group: g, body, head, bar, barGroup, aura,
       position: pos.clone(), hp, maxHp: hp,
-      radius: ENEMY.radius, baseY: 0,
+      radius: ENEMY.radius, tier, baseY: 0,
       stunUntil: 0, liftUntil: 0, blindUntil: 0,
       burnDps: 0, burnUntil: 0, knockVel: new THREE.Vector3(),
       alive: true, randDir: new THREE.Vector3(),
@@ -73,10 +80,10 @@ export class EnemyManager {
           e.group.lookAt(e.position.clone().add(e.randDir));
         } else if (dist > 1.6) {
           toP.normalize();
-          e.position.addScaledVector(toP, ENEMY.speed * dt);
+          e.position.addScaledVector(toP, ENEMY.speed * (1 + (e.tier - 1) * 0.18) * dt);
           e.group.lookAt(player.position.x, e.position.y, player.position.z);
           // touch damage
-          if (dist < 2.0) this.onPlayerHit(ENEMY.touchDamage * dt * 6);
+          if (dist < 2.0) this.onPlayerHit(ENEMY.touchDamage * e.tier * dt * 6);
         }
       }
       // lift visual
@@ -85,6 +92,8 @@ export class EnemyManager {
       else e.group.position.y = 0;
 
       e.group.position.x = e.position.x; e.group.position.z = e.position.z;
+      e.aura.rotation.z += dt * 1.8;
+      e.aura.material.opacity = 0.25 + Math.sin(now * 5) * 0.16;
       // hp bar
       const hpFrac = Math.max(0, e.hp / e.maxHp);
       e.bar.scale.x = hpFrac; e.bar.position.x = -(1 - hpFrac);
@@ -128,7 +137,7 @@ export class EnemyManager {
     return hits;
   }
   damage(e, dmg, opts = {}) {
-    if (dmg) e.hp -= dmg;
+    if (dmg) e.hp -= dmg * (1 + this.getPlayer().damageBonus);
     if (opts.stun) e.stunUntil = Math.max(e.stunUntil, performance.now() / 1000 + (opts.stunDur || 2));
     if (opts.lift) e.liftUntil = Math.max(e.liftUntil, performance.now() / 1000 + (opts.liftDur || 1.5));
     if (opts.knock) {

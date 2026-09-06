@@ -34,6 +34,8 @@ export class World {
 
     this._buildLights();
     this._buildArena();
+    this._buildIslands();
+    this._buildAtmosphere();
 
     this._applyGfx();
     window.addEventListener('resize', () => this.onResize());
@@ -83,6 +85,62 @@ export class World {
     this.arenaRadius = 150;
   }
 
+  _buildAtmosphere() {
+    // A deep-space skybox and animated energy obelisks make the arena feel alive.
+    const stars = new Float32Array(1800 * 3);
+    for (let i = 0; i < 1800; i++) {
+      const radius = 180 + Math.random() * 130;
+      const theta = Math.random() * Math.PI * 2;
+      const y = 18 + Math.random() * 170;
+      stars[i * 3] = Math.cos(theta) * radius;
+      stars[i * 3 + 1] = y;
+      stars[i * 3 + 2] = Math.sin(theta) * radius;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(stars, 3));
+    this.stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x91bfff, size: 1.15, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.scene.add(this.stars);
+
+    this.obelisks = [];
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 + 0.18;
+      const group = new THREE.Group();
+      const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(2.4, 1), new THREE.MeshStandardMaterial({ color: 0x4d5eff, emissive: 0x243ccf, emissiveIntensity: 1.8, roughness: 0.2, metalness: 0.45 }));
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.75, 28, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0x587cff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
+      crystal.position.y = 13; beam.position.y = 14; group.add(crystal, beam);
+      group.position.set(Math.cos(angle) * 128, 0, Math.sin(angle) * 128);
+      this.scene.add(group); this.obelisks.push({ group, crystal, phase: i * 0.78 });
+    }
+  }
+
+  _buildIslands() {
+    this.fruitSpawnPoints = [];
+    const islands = [[-78, -62, 0x356943], [88, -52, 0x72553d], [18, 102, 0x426e85]];
+    islands.forEach(([x, z, color], islandIndex) => {
+      const ground = new THREE.Mesh(new THREE.CylinderGeometry(20, 25, 2.5, 24), new THREE.MeshStandardMaterial({ color, roughness: 0.95 }));
+      ground.position.set(x, -1, z); ground.receiveShadow = true; this.scene.add(ground);
+      for (let i = 0; i < 7; i++) {
+        const angle = i * 2.4 + islandIndex, radius = 5 + (i % 3) * 4;
+        const tx = x + Math.cos(angle) * radius, tz = z + Math.sin(angle) * radius;
+        const tree = new THREE.Group();
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.35, .55, 4, 7), new THREE.MeshStandardMaterial({ color: 0x5b3823, roughness: 1 }));
+        const canopy = new THREE.Mesh(new THREE.SphereGeometry(2.2, 10, 8), new THREE.MeshStandardMaterial({ color: 0x2f7d4a, roughness: .85 }));
+        trunk.position.y = 2; canopy.position.y = 5; tree.add(trunk, canopy); tree.position.set(tx, 0, tz); this.scene.add(tree);
+        this.fruitSpawnPoints.push(new THREE.Vector3(tx + 1.6, 0, tz + 1.2));
+      }
+    });
+  }
+
+  update(dt, time) {
+    if (this.stars) this.stars.rotation.y += dt * 0.008;
+    this.obelisks.forEach((o) => {
+      const pulse = Math.sin(time * 1.5 + o.phase);
+      o.crystal.position.y = 13 + pulse * 1.1;
+      o.crystal.rotation.y += dt * 0.7;
+      o.crystal.rotation.x += dt * 0.23;
+    });
+  }
+
   _applyGfx() {
     const q = this.gfx.quality;
     const pr = { Low: 0.6, Medium: 0.8, High: 1, Ultra: 1.5 }[q] || 1;
@@ -102,6 +160,7 @@ export class World {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    if (this.composer) this.composer.setSize(window.innerWidth, window.innerHeight);
   }
 
   render() { this.renderer.render(this.scene, this.camera); }

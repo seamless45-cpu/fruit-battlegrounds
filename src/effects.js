@@ -76,29 +76,18 @@ export class FX {
   // ----------------------------------------------------------
   bolt(opts) {
     const { x = 0, z = 0, height = 30, color = 0x9b30ff, life = 0.38,
-            thickness = 0.35, jitter = 0.9, branches = 2, glow = 1.4 } = opts || {};
+            thickness = 0.35, jitter = 0.9 } = opts || {};
     const from = new THREE.Vector3(x, 0.2, z);
     const to = new THREE.Vector3(x, height, z);
     const group = new THREE.Group();
-    const core = this._makeBoltMesh(from, to, color, thickness, jitter, 18);
+    // One efficient, irregular segmented strike: no glow layers or branches.
+    const points = this._jaggedPoints(from, to, 11, jitter);
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const core = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.96 }));
     group.add(core);
-    // outer glow
-    const glowMesh = this._makeBoltMesh(from, to, color, thickness * 2.4, jitter * 1.3, 14);
-    glowMesh.material.opacity = 0.35;
-    glowMesh.material.transparent = true;
-    group.add(glowMesh);
-    // branches
-    for (let b = 0; b < branches; b++) {
-      const bx = x + (Math.random() * 2 - 1) * jitter * 2;
-      const bz = z + (Math.random() * 2 - 1) * jitter * 2;
-      const mid = new THREE.Vector3((x + bx) / 2 + (Math.random() * 2 - 1) * jitter, height * (0.4 + Math.random() * 0.3), (z + bz) / 2);
-      const bto = new THREE.Vector3(bx, height * (0.5 + Math.random() * 0.4), bz);
-      const pts = [from.clone(), mid, bto];
-      group.add(this._makeBoltMeshFromPoints(pts, color, thickness * 0.6, jitter * 0.5));
-    }
     this.scene.add(group);
     // brief light
-    const light = new THREE.PointLight(color, 6 * glow, height * 1.6);
+    const light = new THREE.PointLight(color, 3.2, height * 1.15);
     light.position.set(x, height * 0.5, z);
     this.scene.add(light);
 
@@ -107,11 +96,11 @@ export class FX {
       update: (dt) => {
         t += dt;
         const k = 1 - t / life;
-        group.children.forEach((c) => { if (c.material) c.material.opacity = Math.max(0, k) * (c === glowMesh ? 0.35 : 1) * (0.6 + Math.random() * 0.4); });
-        light.intensity = 6 * glow * k;
+        core.material.opacity = Math.max(0, k) * (0.7 + Math.random() * 0.3);
+        light.intensity = 3.2 * k;
         return t < life;
       },
-      dispose: () => { this.scene.remove(group); this.scene.remove(light); }
+      dispose: () => { this.scene.remove(group); this.scene.remove(light); geo.dispose(); core.material.dispose(); }
     });
   }
 

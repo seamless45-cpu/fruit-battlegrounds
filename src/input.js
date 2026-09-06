@@ -25,7 +25,11 @@ export class Input {
   _bind() {
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
     window.addEventListener('keyup', (e) => this.onKeyUp(e));
-    window.addEventListener('blur', () => { this.keys.clear(); this.held = {}; });
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.game.cancelHeldSkills();
+      this.held = {};
+    });
 
     if (!this.isMobile) {
       window.addEventListener('mousemove', (e) => this._setNDC(e.clientX, e.clientY));
@@ -34,25 +38,17 @@ export class Input {
       });
       this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     } else {
-      // touch aim + attack handled via dedicated button + bar buttons
+      // A single-finger tap attacks; movement remains responsive because no touch is blocked.
       this.canvas.addEventListener('touchstart', (e) => {
-        const t = e.touches[0]; this._setNDC(t.clientX, t.clientY);
+        if (e.touches.length !== 1) return;
+        const t = e.touches[0]; this._setNDC(t.clientX, t.clientY); this.game.requestCastM1();
       }, { passive: true });
       this.canvas.addEventListener('touchmove', (e) => {
         const t = e.touches[0]; this._setNDC(t.clientX, t.clientY);
       }, { passive: true });
-      this._addMobileAttackBtn();
     }
   }
 
-  _addMobileAttackBtn() {
-    const b = document.createElement('button');
-    b.id = 'mobileAtk';
-    b.textContent = '⚔ ATK';
-    b.style.cssText = 'position:fixed;right:18px;bottom:120px;z-index:55;width:74px;height:74px;border-radius:50%;background:rgba(120,40,200,.85);color:#fff;border:2px solid #d8b6ff;font-size:13px;font-weight:700;';
-    b.addEventListener('touchstart', (e) => { e.preventDefault(); this.game.requestCastM1(); }, { passive: false });
-    document.getElementById('app').appendChild(b);
-  }
 
   _setNDC(x, y) {
     this.ndc.x = (x / window.innerWidth) * 2 - 1;
@@ -63,6 +59,7 @@ export class Input {
     const k = e.key.toLowerCase();
     this.keys.add(k);
     if (k === 'tab') { e.preventDefault(); this.game.toggleWeapon(); return; }
+    if (k === 'e') { this.game.collectFruit(); return; }
     if (k === 'c' && e.ctrlKey === false) { /* reserved */ }
     if (k === 'escape') { document.getElementById('settingsPanel').classList.add('hidden'); }
 

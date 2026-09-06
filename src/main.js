@@ -9,7 +9,8 @@ import { FX } from './effects.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
 import { castSkill, castM1, tickHeld, releaseHeld, HOLD_SKILLS } from './skills.js';
-import { FRUITS, SWORDS, INVENTORY_ITEMS, PLAYER } from './config.js';
+import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER } from './config.js';
+import { FruitDealer, FruitSpawner, validateGameState } from './progression.js';
 
 const isMobile = window.matchMedia('(pointer: coarse)').matches;
 
@@ -29,6 +30,8 @@ fx.particles = world.gfx.particles;
 setLoad(55, 'Spawning player & enemies…');
 const player = new Player(world.scene);
 const enemies = new EnemyManager(world.scene, () => player, (d) => onPlayerHit(d), (e) => onKill(e));
+const dealer = new FruitDealer();
+const fruitSpawner = new FruitSpawner(world.scene, world.fruitSpawnPoints);
 
 // ---- screen flash overlay (for Fatal Destruction red shift) ----
 const flash = document.createElement('div');
@@ -40,10 +43,13 @@ document.getElementById('app').appendChild(flash);
 // ------------------------------------------------------------
 const game = {
   isMobile,
-  world, fx, player, enemies, scene: world.scene,
-  equippedFruit: null, equippedSword: null, activeWeapon: 'fruit',
+  world, fx, player, enemies, dealer, fruitSpawner, scene: world.scene,
+  equippedFruit: null, equippedSword: null, equippedStyle: 'combat', activeWeapon: 'style',
   cooldowns: {},
   tokens: 0, kills: 0,
+  level: 1, xp: 0, xpToNext: 100,
+  statPoints: 0, stats: { health: 0, fruit: 0, sword: 0, fighting: 0 },
+  ownedFruits: new Set(), ownedSwords: new Set(),
   dashCharges: 3, dashTimer: 0,
   held: {}, chargeT: 0, heldStart: 0,
   m1Combo: 0, endLag: 0,
@@ -60,6 +66,31 @@ const game = {
     flash.style.opacity = deep ? '0.85' : '0.4';
     requestAnimationFrame(() => { flash.style.transition = `opacity ${sec}s linear`; flash.style.opacity = '0'; });
   },
+};
+
+game.allocateStat = (type, rawAmount) => {
+  const amount = Math.floor(Number(rawAmount));
+  if (!Number.isSafeInteger(amount) || amount < 1) return ui.toast('Enter a whole number of points.');
+  if (amount > game.statPoints) return ui.toast(`Only ${game.statPoints} stat points are available.`);
+  game.statPoints -= amount; game.stats[type] += amount;
+  if (type === 'health') {
+    player.maxHp = PLAYER.maxHp + game.stats.health * 20 + (game.level - 1) * 45;
+    player.hp = Math.min(player.maxHp, player.hp + amount * 20);
+  }
+  game.refreshCombatBonus();
+  ui.refreshStats(); ui.toast(`${amount} ${type} point${amount === 1 ? '' : 's'} invested.`);
+};
+
+game.refreshCombatBonus = () => {
+  const stat = game.activeWeapon === 'fruit' ? game.stats.fruit : game.activeWeapon === 'sword' ? game.stats.sword : game.stats.fighting;
+  player.damageBonus = stat * 0.05;
+};
+
+game.collectFruit = () => {
+  const id = fruitSpawner.collectNearby(player.position);
+  if (!id) return ui.toast('No spawned fruit is close enough to collect.');
+  if (game.ownedFruits.has(id)) return ui.toast(`${FRUITS[id].name} was already in your inventory.`);
+  game.ownedFruits.add(id); ui.refreshInventory(); ui.toast(`Found ${FRUITS[id].emoji} ${FRUITS[id].name}!`);
 };
 
 // ------------------------------------------------------------
@@ -81,6 +112,7 @@ function makeSwordMesh(color) {
 
 function activeWeaponDef() {
   if (game.activeWeapon === 'sword') return SWORDS[game.equippedSword] || null;
+  if (game.activeWeapon === 'style') return FIGHTING_STYLES[game.equippedStyle] || null;
   return FRUITS[game.equippedFruit] || null;
 }
 
@@ -104,14 +136,18 @@ function applyEquipVisuals() {
 game.toggleEquip = (id) => {
   const item = INVENTORY_ITEMS.find((i) => i.id === id);
   if (!item) return;
+  if (item.type === 'fruit' && !game.ownedFruits.has(id)) { ui.toast('Buy this fruit from the dealer or find it in the arena.'); return; }
+  if (item.type === 'sword' && !game.ownedSwords.has(id)) { ui.toast('Swords must be purchased before equipping.'); return; }
+  if (item.type === 'style') { game.equippedStyle = id; game.activeWeapon = 'style'; game.refreshCombatBonus(); initCooldowns(); ui.buildSkillBar(); ui.refreshInventory(); return; }
   if (item.type === 'fruit') {
-    if (game.equippedFruit === id) { game.equippedFruit = null; if (game.activeWeapon === 'fruit' && game.equippedSword) game.activeWeapon = 'sword'; }
+    if (game.equippedFruit === id) { game.equippedFruit = null; if (game.activeWeapon === 'fruit') game.activeWeapon = game.equippedSword ? 'sword' : 'style'; }
     else { game.equippedFruit = id; game.activeWeapon = 'fruit'; }
   } else {
-    if (game.equippedSword === id) { game.equippedSword = null; if (game.activeWeapon === 'sword' && game.equippedFruit) game.activeWeapon = 'fruit'; }
+    if (game.equippedSword === id) { game.equippedSword = null; if (game.activeWeapon === 'sword') game.activeWeapon = game.equippedFruit ? 'fruit' : 'style'; }
     else { game.equippedSword = id; game.activeWeapon = 'sword'; }
   }
   applyEquipVisuals();
+  game.refreshCombatBonus();
   initCooldowns();
   ui.buildSkillBar();
   ui.refreshInventory();
@@ -119,12 +155,14 @@ game.toggleEquip = (id) => {
 };
 
 game.toggleWeapon = () => {
-  if (game.equippedFruit && game.equippedSword) {
-    game.activeWeapon = game.activeWeapon === 'fruit' ? 'sword' : 'fruit';
+  const available = [game.equippedStyle && 'style', game.equippedFruit && 'fruit', game.equippedSword && 'sword'].filter(Boolean);
+  if (available.length > 1) {
+    game.activeWeapon = available[(available.indexOf(game.activeWeapon) + 1) % available.length];
+    game.refreshCombatBonus();
     initCooldowns(); ui.buildSkillBar(); ui.refreshInventory();
     const w = activeWeaponDef();
     ui.toast(`Active: ${w ? w.name : 'none'}`);
-  } else ui.toast('Equip both a fruit and a sword to switch.');
+  } else ui.toast('Buy a fruit or sword to unlock weapon switching.');
 };
 
 game.skillIdForIndex = (idx) => {
@@ -152,6 +190,13 @@ game.requestCastM1 = () => {
   const aim = game.aimPoint();
   castM1(game, weapon.id);
   cd.remaining = weapon.m1.cd;
+};
+
+game.cancelHeldSkills = () => {
+  for (const id in game.held) {
+    if (game.held[id]) game.releaseHeld(id);
+  }
+  game.held = {};
 };
 
 game.releaseHeld = (id) => {
@@ -185,11 +230,26 @@ function onPlayerHit(dmg) {
 }
 function onKill(e) {
   game.kills += 1;
-  const tk = 10 + Math.floor(Math.random() * 91);
+  const tk = (10 + Math.floor(Math.random() * 91)) * (e.tier || 1);
   game.tokens += tk;
+  const xpGain = Math.round(22 + e.maxHp * 0.08);
+  game.xp += xpGain;
+  let leveled = false;
+  while (game.xp >= game.xpToNext && game.level < PLAYER.maxLevel) {
+    game.xp -= game.xpToNext;
+    game.level += 1;
+    game.xpToNext = Math.round(100 * Math.pow(1.08, game.level - 1));
+    player.level = game.level;
+    player.maxHp = PLAYER.maxHp + game.stats.health * 20 + (game.level - 1) * 45;
+    player.hp = player.maxHp;
+    game.statPoints += 3;
+    leveled = true;
+  }
   // gravity blade superforce charge
   if (game.equippedSword === 'gravityblade') game.upgrades.gb_super.charge = Math.min(1, game.upgrades.gb_super.charge + 0.1);
   ui.setKills(game.kills); ui.setTokens(game.tokens);
+  ui.setLevel(game.level, game.xp, game.xpToNext); ui.refreshStats();
+  if (leveled) { fx.pillar({ x: player.position.x, z: player.position.z, height: 36, color: 0xffd56b, duration: 1.2, rings: 7 }); fx.shake(0.45, 1.6); ui.toast(`LEVEL UP! You are now Lv ${game.level}. Full HP restored.`, 3000); }
 }
 
 // ------------------------------------------------------------
@@ -227,15 +287,19 @@ const input = new Input(game, canvas, camera);
 const ui = new UI(game);
 ui.buildInventory();
 ui.buildSettings();
+ui.buildProgressionPanels();
 
-// auto-equip starter loadout
-game.equippedFruit = 'gravity';
-game.equippedSword = 'gravityblade';
-game.activeWeapon = 'fruit';
+// Everyone begins with Combat; fruits and swords are earned or purchased.
+game.equippedFruit = null;
+game.equippedSword = null;
+game.equippedStyle = 'combat';
+game.activeWeapon = 'style';
+game.refreshCombatBonus();
 applyEquipVisuals();
 initCooldowns();
 ui.buildSkillBar();
 ui.refreshInventory();
+ui.setLevel(game.level, game.xp, game.xpToNext);
 
 // aim reticle on ground
 const reticle = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.8, 32),
@@ -291,7 +355,12 @@ function loopBody() {
   if (game.dashTimer >= 3 && game.dashCharges < 3) { game.dashCharges++; game.dashTimer = 0; }
 
   enemies.update(dt, now / 1000);
+  fruitSpawner.update(dt);
+  if (dealer.update(dt)) { ui.renderDealerStock(); ui.toast('Fruit Dealer stock has refreshed!', 3000); }
+  ui.updateProgression();
   fx.update(dt);
+  world.update(dt, now / 1000);
+  validateGameState(game);
   updateCamera(dt);
 
   // reticle follows aim
