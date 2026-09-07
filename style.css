@@ -68,6 +68,23 @@ canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
 .menu-row button { padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(255,231,168,.45); background: rgba(8,20,36,.55); color: #fff6d4; cursor: pointer; letter-spacing: 1px; transition: transform .15s, background .15s; }
 .menu-row button:hover { background: #f0c36a; color: #1a1204; transform: translateY(-2px); }
 
+#sidePick { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 40%, rgba(18,36,62,.55), rgba(8,14,24,.88)); }
+.side-box { width: min(560px, calc(100vw - 28px)); padding: 28px 24px 24px; border-radius: 22px; text-align: center; background: rgba(12,28,48,.92); border: 1px solid rgba(240,195,106,.45); box-shadow: 0 22px 70px rgba(8,16,28,.5); animation: pop .4s cubic-bezier(.2,1.4,.3,1) both; }
+.side-kicker { letter-spacing: 5px; font-size: 11px; color: #ffe7a8; margin-bottom: 8px; }
+.side-box h2 { font-size: 34px; letter-spacing: 4px; background: linear-gradient(180deg,#fffdf0,#ffe08a 55%,#e09a28); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.side-box p { margin: 10px auto 18px; max-width: 420px; color: #cbb896; font-size: 13px; line-height: 1.45; }
+.side-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.side-row button { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 148px; padding: 16px 12px; border-radius: 16px; border: 1px solid #3a5a78; background: #17304a; color: #fff6d4; cursor: pointer; transition: transform .16s, border-color .16s, box-shadow .2s; }
+.side-row button span { font-size: 36px; }
+.side-row button b { letter-spacing: 2px; font-size: 16px; }
+.side-row button small { color: #cbb896; font-size: 11px; line-height: 1.35; }
+.side-row button:hover { transform: translateY(-4px) scale(1.03); }
+#pickPirate:hover { border-color: #ff6a7a; box-shadow: 0 10px 24px rgba(255,80,90,.28); }
+#pickMarine:hover { border-color: #6ab4ff; box-shadow: 0 10px 24px rgba(80,150,255,.28); }
+.chip-side b { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quest-card.elite { border-color: #c9a227; background: linear-gradient(180deg, #3a2a10, #17304a); }
+.quest-card.elite h4::before { content: '★ '; color: #f0c36a; }
+
 /* ---------- Top chips ---------- */
 #topbar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; z-index: 50; animation: dropIn .5s ease both; }
 .chip { display: flex; align-items: center; gap: 6px; background: rgba(12,28,48,.78); border: 1px solid rgba(240,195,106,.32); padding: 6px 10px; border-radius: 999px; font-size: 12px; backdrop-filter: blur(8px); transition: transform .18s cubic-bezier(.2,1.3,.3,1), box-shadow .2s; }

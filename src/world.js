@@ -2,9 +2,9 @@
 //  World: ocean, main island, fruit isles, dock, lights, gfx.
 // ============================================================
 import * as THREE from 'three';
-import { WORLD } from './config.js';
+import { WORLD, ISLANDS } from './config.js';
 import { bakeWaterTex, bakeSandTex } from './prerender.js';
-import { GEO, createQuestNpc } from './models.js';
+import { GEO, createQuestNpc, createShopNpc, makeNameSprite } from './models.js';
 
 const GFX = {
   quality: 'High',
@@ -59,9 +59,9 @@ export class World {
     this.scene = new THREE.Scene();
     this.fogColor = 0xb9d8ef;
     this.scene.background = new THREE.Color(0x87c6f0);
-    this.scene.fog = new THREE.Fog(this.fogColor, 140, 560);
+    this.scene.fog = new THREE.Fog(this.fogColor, 180, 720);
 
-    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1100);
+    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1600);
     this.camera.position.set(0, 18, 28);
 
     this.islandCenters = [];
@@ -87,9 +87,9 @@ export class World {
     this.sun.position.set(80, 140, 40);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
-    this.sun.shadow.camera.near = 1; this.sun.shadow.camera.far = 300;
-    this.sun.shadow.camera.left = -110; this.sun.shadow.camera.right = 110;
-    this.sun.shadow.camera.top = 110; this.sun.shadow.camera.bottom = -110;
+    this.sun.shadow.camera.near = 1; this.sun.shadow.camera.far = 520;
+    this.sun.shadow.camera.left = -260; this.sun.shadow.camera.right = 260;
+    this.sun.shadow.camera.top = 260; this.sun.shadow.camera.bottom = -260;
     this.scene.add(this.sun);
     this.fill = new THREE.PointLight(0xffe0a0, 0.45, 260);
     this.fill.position.set(-40, 40, -20);
@@ -137,7 +137,7 @@ export class World {
   _buildOcean() {
     const waterTex = bakeWaterTex();
     const ocean = new THREE.Mesh(
-      new THREE.PlaneGeometry(900, 900, 1, 1),
+      new THREE.PlaneGeometry(1400, 1400, 1, 1),
       new THREE.MeshStandardMaterial({ map: waterTex, color: 0x3db0d4, metalness: 0.42, roughness: 0.32 }),
     );
     ocean.rotation.x = -Math.PI / 2;
@@ -176,7 +176,8 @@ export class World {
       p.castShadow = true; this.scene.add(p);
     }
     this.arenaRadius = WORLD.islandRadius;
-    this.islandCenters.push({ x: 0, z: 0, r: WORLD.islandRadius });
+    const arena = ISLANDS.find((i) => i.id === 'arena') || { id: 'arena', name: 'Grand Arena', x: 0, z: 0, r: WORLD.islandRadius, faction: 'neutral', boss: 'Captain Rook', elite: 'Warlord Ember' };
+    this.islandCenters.push({ id: arena.id, name: arena.name, x: 0, z: 0, r: WORLD.islandRadius, faction: arena.faction, boss: arena.boss, elite: arena.elite });
   }
 
   _buildAtmosphere() {
@@ -222,35 +223,60 @@ export class World {
       bang: npc.bang,
       position: new THREE.Vector3(WORLD.questNpc.x, 0, WORLD.questNpc.z),
     };
+
+    const shop = createShopNpc();
+    shop.group.position.set(WORLD.shopNpc.x, 0, WORLD.shopNpc.z);
+    shop.group.rotation.y = -Math.PI * 0.7;
+    this.scene.add(shop.group);
+    this.shopNpc = {
+      group: shop.group,
+      bang: shop.bang,
+      position: new THREE.Vector3(WORLD.shopNpc.x, 0, WORLD.shopNpc.z),
+    };
   }
 
   _buildIslands() {
-    const trunkGeo = GEO.cyl;
-    const islands = [
-      [-132, -96, 0x356943],
-      [138, -78, 0x72553d],
-      [36, 148, 0x426e85],
-    ];
     const canopyMat = new THREE.MeshStandardMaterial({ color: 0x2f7d4a, roughness: 0.85 });
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b3823, roughness: 1 });
-    islands.forEach(([x, z, color], islandIndex) => {
+    ISLANDS.forEach((isle, islandIndex) => {
+      if (!this.islandCenters.some((c) => c.id === isle.id)) {
+        this.islandCenters.push({
+          id: isle.id, name: isle.name, x: isle.x, z: isle.z, r: isle.r,
+          faction: isle.faction, boss: isle.boss, elite: isle.elite,
+        });
+      }
+      if (isle.skipMesh) return;
       const ground = new THREE.Mesh(
-        new THREE.CylinderGeometry(18, 22, 2.6, 16),
-        new THREE.MeshStandardMaterial({ color, roughness: 0.95 }),
+        new THREE.CylinderGeometry(isle.r, isle.r + 4, 2.6, 18),
+        new THREE.MeshStandardMaterial({ color: isle.color, roughness: 0.95 }),
       );
-      ground.position.set(x, -1.1, z); ground.receiveShadow = true; this.scene.add(ground);
-      this.islandCenters.push({ x, z, r: 18 });
-      for (let i = 0; i < 5; i++) {
-        const angle = i * 2.4 + islandIndex, radius = 4 + (i % 3) * 3.5;
-        const tx = x + Math.cos(angle) * radius, tz = z + Math.sin(angle) * radius;
+      ground.position.set(isle.x, -1.1, isle.z); ground.receiveShadow = true; this.scene.add(ground);
+
+      const rim = new THREE.Mesh(
+        new THREE.TorusGeometry(isle.r, 0.55, 6, 28),
+        new THREE.MeshStandardMaterial({
+          color: isle.faction === 'marine' ? 0x8ab4ff : isle.faction === 'pirate' ? 0xc9a227 : 0xe8eefc,
+          roughness: 0.5, metalness: 0.25,
+        }),
+      );
+      rim.rotation.x = -Math.PI / 2; rim.position.set(isle.x, 0.22, isle.z); this.scene.add(rim);
+
+      const trees = isle.trees || 4;
+      for (let i = 0; i < trees; i++) {
+        const angle = i * 2.4 + islandIndex, radius = 3 + (i % 3) * Math.max(2.2, isle.r * 0.22);
+        const tx = isle.x + Math.cos(angle) * radius, tz = isle.z + Math.sin(angle) * radius;
         const tree = new THREE.Group();
-        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        const trunk = new THREE.Mesh(GEO.cyl, trunkMat);
         trunk.scale.set(0.8, 4, 0.8); trunk.position.y = 2;
         const canopy = new THREE.Mesh(GEO.sphere, canopyMat);
         canopy.scale.set(4.4, 4.2, 4.4); canopy.position.y = 5;
         tree.add(trunk, canopy); tree.position.set(tx, 0, tz); this.scene.add(tree);
         this.fruitSpawnPoints.push(new THREE.Vector3(tx + 1.6, 0, tz + 1.2));
       }
+
+      const label = makeNameSprite(isle.name);
+      label.position.set(isle.x, 8.4, isle.z);
+      this.scene.add(label);
     });
   }
 
@@ -288,6 +314,12 @@ export class World {
   }
   nearQuestNpc(pos) {
     const n = WORLD.questNpc;
+    const dx = pos.x - n.x, dz = pos.z - n.z;
+    return dx * dx + dz * dz <= n.radius * n.radius;
+  }
+  nearShopNpc(pos) {
+    const n = WORLD.shopNpc;
+    if (!n) return false;
     const dx = pos.x - n.x, dz = pos.z - n.z;
     return dx * dx + dz * dz <= n.radius * n.radius;
   }

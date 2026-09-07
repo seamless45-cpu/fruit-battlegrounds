@@ -9,8 +9,8 @@ import { FX } from './effects.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
 import { castSkill, castM1, tickHeld, releaseHeld } from './skills.js';
-import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER, BOATS, GIFT_CODES, QUESTS, SECRET_QUESTS, AWAKEN, RACES } from './config.js';
-import { FruitDealer, FruitSpawner, BoatDealer, Gacha, validateGameState } from './progression.js';
+import { FRUITS, SWORDS, FIGHTING_STYLES, INVENTORY_ITEMS, PLAYER, BOATS, GIFT_CODES, QUESTS, SECRET_QUESTS, ELITE_QUESTS, AWAKEN, RACES, ACCESSORIES, SIDES } from './config.js';
+import { FruitDealer, FruitSpawner, BoatDealer, Gacha, AccessoryShop, validateGameState } from './progression.js';
 import { createSwordMesh } from './models.js';
 import { sfx } from './audio.js';
 
@@ -35,9 +35,10 @@ fx.particles = world.gfx.particles;
 
 setLoad(48, 'Sculpting fighters…');
 const player = new Player(world.scene, world);
-const enemies = new EnemyManager(world.scene, () => player, (d) => onPlayerHit(d), (e) => onKill(e), fx);
+const enemies = new EnemyManager(world.scene, () => player, (d) => onPlayerHit(d), (e) => onKill(e), fx, world);
 const dealer = new FruitDealer();
 const shipwright = new BoatDealer();
+const accessoryShop = new AccessoryShop();
 const gacha = new Gacha();
 const fruitSpawner = new FruitSpawner(world.scene, world.fruitSpawnPoints);
 sfx.unlock();
@@ -55,15 +56,18 @@ function loadRedeemed() {
 
 const game = {
   isMobile, playing: false,
-  world, fx, player, enemies, dealer, shipwright, fruitSpawner, gacha, sfx, scene: world.scene,
+  world, fx, player, enemies, dealer, shipwright, accessoryShop, fruitSpawner, gacha, sfx, scene: world.scene,
   equippedFruit: null, equippedSword: null, equippedStyle: 'combat', activeWeapon: 'style',
   cooldowns: {},
   tokens: 0, kills: 0,
-  questStats: { kills: 0, fruits: 0, boats: 0, legends: 0, awakens: 0 },
+  questStats: { kills: 0, fruits: 0, boats: 0, legends: 0, awakens: 0, bosses: 0, elites: 0 },
   claimedQuests: new Set(),
   fruitKills: {},
   awakened: new Set(),
   raceId: 'human',
+  faction: null,
+  ownedAccessories: new Set(),
+  equippedAccessory: null,
   redeemed: loadRedeemed(),
   level: 1, xp: 0, xpToNext: 100,
   statPoints: 0, stats: { health: 0, fruit: 0, sword: 0, fighting: 0 },
@@ -105,14 +109,39 @@ game.refreshCombatBonus = () => {
   const race = RACES[game.raceId] || RACES.human;
   let bonus = stat * 0.05 + ((race.dmg || 1) - 1);
   if (game.activeWeapon === 'fruit' && game.awakened.has(game.equippedFruit)) bonus += AWAKEN.dmg;
+  const acc = ACCESSORIES[game.equippedAccessory];
+  if (acc) bonus += acc.dmg || 0;
   player.damageBonus = bonus;
 };
 
 function applyRaceHp() {
   const race = RACES[game.raceId] || RACES.human;
-  player.maxHp = Math.round((PLAYER.maxHp + game.stats.health * 20 + (game.level - 1) * 45) * (race.hp || 1));
+  const acc = ACCESSORIES[game.equippedAccessory];
+  const extra = acc ? (acc.hp || 0) : 0;
+  player.maxHp = Math.round((PLAYER.maxHp + game.stats.health * 20 + (game.level - 1) * 45 + extra) * (race.hp || 1));
   player.hp = Math.min(player.maxHp, player.hp);
 }
+
+game.equipAccessory = (id) => {
+  const def = ACCESSORIES[id];
+  if (!def) return;
+  game.equippedAccessory = id;
+  player.speedMod = 1 + (def.speed || 0);
+  applyRaceHp();
+  game.refreshCombatBonus();
+  ui.setHp(player.hp / player.maxHp);
+  if (ui.renderShop) ui.renderShop();
+};
+
+game.pickSide = (id) => {
+  const def = SIDES[id];
+  if (!def) return;
+  game.faction = def.id;
+  player.setFaction(def.id);
+  if (ui.closeSidePick) ui.closeSidePick();
+  if (ui.setFaction) ui.setFaction(def.id);
+  game.startPlay();
+};
 
 game.setRace = (id) => {
   if (!RACES[id]) return;
@@ -178,11 +207,20 @@ game.interact = () => {
     return;
   }
   if (world.nearQuestNpc(player.position)) { game.talkToNpc(); return; }
-  ui.toast('Nothing nearby. Find the gold-cloaked quest giver or a world fruit.');
+  if (world.nearShopNpc && world.nearShopNpc(player.position)) { game.openShop(); return; }
+  ui.toast('Nothing nearby. Find the quest giver, the shop stall, or a world fruit.');
+};
+
+game.openShop = () => {
+  if (!game.playing) return;
+  ui.openPanel('shopPanel');
+  if (ui.renderShop) ui.renderShop();
+  ui.toast('Hats, capes, rings — one accessory at a time.');
 };
 
 game.talkToNpc = () => {
   if (!game.playing) return;
+  if (world.nearShopNpc && world.nearShopNpc(player.position)) { game.openShop(); return; }
   ui.openPanel('questPanel');
   ui.renderQuests();
   ui.toast('The quest giver unrolls a bounty board.');
@@ -194,7 +232,7 @@ game.noteQuest = (stat, n = 1) => {
 };
 
 game.claimQuest = (id) => {
-  const q = QUESTS.find((x) => x.id === id) || SECRET_QUESTS.find((x) => x.id === id);
+  const q = QUESTS.find((x) => x.id === id) || SECRET_QUESTS.find((x) => x.id === id) || ELITE_QUESTS.find((x) => x.id === id);
   if (!q) return { ok: false, message: 'Unknown quest.' };
   if (game.claimedQuests.has(id)) return { ok: false, message: 'Already claimed.' };
   if ((game.questStats[q.stat] || 0) < q.need) return { ok: false, message: 'Quest not finished yet.' };
@@ -249,17 +287,20 @@ game.toggleSail = () => {
 
 game.startPlay = () => {
   if (game.playing) return;
+  if (!game.faction) { if (ui.showSidePick) ui.showSidePick(); return; }
   sfx.unlock();
   game.playing = true;
   game.launching = true;
   player.position.set(0, 36, 0);
   player.vy = -4;
   player.onGround = false;
+  if (enemies.seed) enemies.seed();
   fx.pillar({ x: 0, z: 0, height: 48, color: 0xffe08a, duration: 1.1, rings: 6 });
   fx.shockwave({ x: 0, z: 0, radius: 16, color: 0xffe08a, duration: 0.7, debrisCount: 6 });
   sfx.levelup();
   ui.showGameUI();
-  ui.toast('WASD or joystick • drag to look • tap to attack • E talk to quests', 4800);
+  const side = SIDES[game.faction];
+  ui.toast(`${side ? side.emoji + ' ' + side.name : ''} · WASD · drag look · E talk · sail to the outer isles`, 4800);
   setTimeout(() => { game.launching = false; }, 1100);
 };
 
@@ -438,15 +479,21 @@ function addXp(xpGain) {
 function onKill(e) {
   game.kills += 1;
   game.noteQuest('kills');
+  if (e.kind === 'boss') game.noteQuest('bosses');
+  if (e.kind === 'elite') game.noteQuest('elites');
   if (game.activeWeapon === 'fruit' && game.equippedFruit) {
     const fid = game.equippedFruit;
     game.fruitKills[fid] = (game.fruitKills[fid] || 0) + 1;
   }
-  const tk = (10 + Math.floor(Math.random() * 91)) * (e.tier || 1);
+  const loot = 1 + ((ACCESSORIES[game.equippedAccessory] && ACCESSORIES[game.equippedAccessory].loot) || 0);
+  const kindMul = e.kind === 'elite' ? 16 : e.kind === 'boss' ? 8 : 1;
+  const tk = Math.round((10 + Math.floor(Math.random() * 91)) * (e.tier || 1) * kindMul * loot);
   game.tokens += tk;
-  addXp(Math.round(22 + e.maxHp * 0.08));
+  addXp(Math.round((22 + e.maxHp * 0.08) * (e.kind === 'elite' ? 4 : e.kind === 'boss' ? 2.5 : 1)));
   if (game.equippedSword === 'gravityblade') game.upgrades.gb_super.charge = Math.min(1, game.upgrades.gb_super.charge + 0.1);
   ui.setKills(game.kills); ui.setTokens(game.tokens);
+  if (e.kind === 'elite') ui.toast(`${e.name || 'Elite boss'} falls. The sea remembers.`, 3200);
+  else if (e.kind === 'boss') ui.toast(`${e.name || 'Island boss'} defeated!`, 2800);
 }
 
 function applyBloom() {
@@ -476,9 +523,9 @@ const camera = world.camera;
 setLoad(70, 'Wiring UI & input…');
 const input = new Input(game, canvas, camera);
 const ui = new UI(game);
-ui.buildInventory();
-ui.buildSettings();
-ui.buildProgressionPanels();
+try { ui.buildInventory(); } catch (e) { console.warn('UI inventory', e); }
+try { ui.buildSettings(); } catch (e) { console.warn('UI settings', e); }
+try { ui.buildProgressionPanels(); } catch (e) { console.warn('UI panels', e); }
 
 game.equippedFruit = null;
 game.equippedSword = null;
@@ -569,6 +616,7 @@ function loopBody() {
   reticle.position.x = aim.x; reticle.position.z = aim.z;
 
   if (world.nearQuestNpc(player.position)) ui.setPrompt('E — Talk to Quest Giver');
+  else if (world.nearShopNpc && world.nearShopNpc(player.position)) ui.setPrompt('E — Talk to Shop');
   else if (fruitSpawner.nearFruit(player.position)) ui.setPrompt('E — Collect fruit');
   else ui.setPrompt('');
 

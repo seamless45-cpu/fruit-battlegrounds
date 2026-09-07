@@ -44,7 +44,7 @@
         <span>🪐</span><span>⚡</span><span>❄️</span><span>🔥</span><span>✨</span><span>🌋</span>
       </div>
       <div class="loader-orbit inner" aria-hidden="true">
-        <span>💨</span><span>🐾</span><span>💗</span><span>🥁</span><span>🍞</span>
+        <span>💨</span><span>🐾</span><span>💗</span><span>🥁</span><span>🧘</span>
       </div>
       <div class="loader-sun" aria-hidden="true"></div>
       <div class="loader-box">
@@ -70,7 +70,20 @@
       </div>
     </div>
 
+    <div id="sidePick" class="hidden" role="dialog" aria-label="Pick a side">
+      <div class="side-box">
+        <div class="side-kicker">CHOOSE YOUR ALLEGIANCE</div>
+        <h2>PICK A SIDE</h2>
+        <p>Pirates plunder the Grand Line. Marines keep the peace. This choice is yours for the whole voyage.</p>
+        <div class="side-row">
+          <button id="pickPirate" type="button"><span>🏴‍☠️</span><b>PIRATES</b><small>Freedom, plunder, and a black flag.</small></button>
+          <button id="pickMarine" type="button"><span>⚓</span><b>MARINES</b><small>Justice, order, and a white coat.</small></button>
+        </div>
+      </div>
+    </div>
+
     <div id="topbar" class="hidden">
+      <div class="chip chip-side"><span>SIDE</span><b id="sideCount">—</b></div>
       <div class="chip"><span>LVL</span><b id="levelCount">1</b></div>
       <div class="chip chip-xp"><span>XP</span><b id="xpCount">0 / 100</b><div class="xpbar"><div class="xpfill" id="xpFill"></div></div></div>
       <div class="chip chip-money"><span>MONEY</span><b id="tokenCount">0</b><b id="moneyCount" class="sr-only">0</b></div>
@@ -107,12 +120,19 @@
 
     <div id="utilityBar" class="hidden">
       <button id="dealerBtn" type="button">🍎 Fruit</button>
+      <button id="shopBtn" type="button">🛍 Shop</button>
       <button id="boatBtn" type="button">⚓ Shipwright</button>
       <button id="statsBtn" type="button">✦ Stats</button>
       <button id="questBtn" type="button">📜 Quests</button>
       <button id="codesBtn" type="button">🎁 Codes</button>
       <button id="gachaBtn" type="button">🎰 Gacha</button>
     </div>
+
+    <aside id="shopPanel" class="hidden" role="dialog" aria-label="Accessories shop">
+      <div class="set-head"><span>ACCESSORY SHOP</span><button id="shopClose" type="button" aria-label="Close shop">✕</button></div>
+      <p class="panel-copy">Talk to the teal stall west of spawn, or browse hats, capes, and rings here. Equip one at a time.</p>
+      <div id="shopStock" class="dealer-stock"></div>
+    </aside>
 
     <aside id="dealerPanel" class="hidden" role="dialog" aria-label="Fruit dealer">
       <div class="set-head"><span>FRUIT DEALER</span><button id="dealerClose" type="button" aria-label="Close fruit dealer">✕</button></div>
@@ -163,6 +183,9 @@
       <h4 class="panel-h">Secret bounties</h4>
       <p class="panel-copy">Hidden contracts pay 5–100 levels. The board will not name you.</p>
       <div id="secretQuestList" class="quest-list"></div>
+      <h4 class="panel-h">Elite contracts</h4>
+      <p class="panel-copy">Same hunts, tenfold pay. Named bosses and warlords sit on the outer islands.</p>
+      <div id="eliteQuestList" class="quest-list"></div>
     </aside>
 
     <aside id="statsPanel" class="hidden" role="dialog" aria-label="Player statistics">
@@ -192,7 +215,9 @@
       <p><b>Skills</b><span>Z · X · C · V · B · F</span></p>
       <p><b>Sail</b><span>Q at the southern dock</span></p>
       <p><b>Switch loadout</b><span>Tab</span></p>
-      <p><b>Talk / collect</b><span>E near the quest NPC or fruit</span></p>
+      <p><b>Talk / collect</b><span>E near quest, shop, or fruit</span></p>
+      <p><b>Side</b><span>Pirate or Marine at Play</span></p>
+      <p><b>Islands</b><span>Sail out — bosses live there</span></p>
       <p><b>Gacha</b><span>×1 / ×10 · pity 75 / 12</span></p>
       <p><b>Look invert</b><span>Settings if camera feels flipped</span></p>
     </aside>

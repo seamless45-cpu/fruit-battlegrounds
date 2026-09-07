@@ -1,7 +1,7 @@
 // ============================================================
 //  Reworked HUD, dealers, menu, gifts, quests, motion.
 // ============================================================
-import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES, STYLE_PRICES, QUESTS, SECRET_QUESTS, GACHA, RACES, AWAKEN } from './config.js';
+import { INVENTORY_ITEMS, FRUITS, SWORDS, FIGHTING_STYLES, SKILL_KEYS, FRUIT_DEALER, BOATS, SWORD_PRICES, STYLE_PRICES, QUESTS, SECRET_QUESTS, ELITE_QUESTS, GACHA, RACES, AWAKEN, ACCESSORIES, SIDES } from './config.js';
 
 export class UI {
   constructor(game) {
@@ -234,12 +234,42 @@ export class UI {
     document.getElementById('helpClose').addEventListener('click', () => this.closePanel('helpPanel'));
     document.getElementById('skillClose').addEventListener('click', () => this.closeSkillBar());
     document.getElementById('skillReopen').addEventListener('click', () => this.openSkillBar());
-    document.getElementById('playBtn').addEventListener('click', () => this.game.startPlay());
+    const awakenBtn = document.getElementById('awakenBtn');
+    if (awakenBtn && !awakenBtn.dataset.bound) {
+      awakenBtn.dataset.bound = '1';
+      awakenBtn.addEventListener('click', () => this.game.tryAwaken && this.game.tryAwaken());
+    }
+    document.getElementById('playBtn').addEventListener('click', () => {
+      if (!this.game.faction) this.showSidePick();
+      else this.game.startPlay();
+    });
+    const pirate = document.getElementById('pickPirate');
+    const marine = document.getElementById('pickMarine');
+    if (pirate) pirate.addEventListener('click', () => this.game.pickSide('pirate'));
+    if (marine) marine.addEventListener('click', () => this.game.pickSide('marine'));
+  }
+
+  showSidePick() {
+    const el = document.getElementById('sidePick');
+    if (el) el.classList.remove('hidden');
+  }
+  closeSidePick() {
+    const el = document.getElementById('sidePick');
+    if (el) el.classList.add('hidden');
+  }
+  setFaction(id) {
+    const def = SIDES[id];
+    const el = document.getElementById('sideCount');
+    if (el) el.textContent = def ? `${def.emoji} ${def.name}` : '—';
   }
 
   buildProgressionPanels() {
     document.getElementById('dealerBtn').addEventListener('click', () => { this.togglePanel('dealerPanel'); this.renderDealerStock(); });
     document.getElementById('dealerClose').addEventListener('click', () => this.closePanel('dealerPanel'));
+    const shopBtn = document.getElementById('shopBtn');
+    if (shopBtn) shopBtn.addEventListener('click', () => { this.togglePanel('shopPanel'); this.renderShop(); });
+    const shopClose = document.getElementById('shopClose');
+    if (shopClose) shopClose.addEventListener('click', () => this.closePanel('shopPanel'));
     document.getElementById('statsBtn').addEventListener('click', () => { this.togglePanel('statsPanel'); this.refreshStats(); });
     document.getElementById('statsClose').addEventListener('click', () => this.closePanel('statsPanel'));
     document.getElementById('boatBtn').addEventListener('click', () => { this.togglePanel('boatPanel'); this.renderBoatShop(); });
@@ -270,17 +300,44 @@ export class UI {
     ['health', 'fruit', 'sword', 'fighting'].forEach((type) => {
       document.getElementById(`${type}StatBuy`).addEventListener('click', () => this.game.allocateStat(type));
     });
-    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats(); this.renderQuests(); this.renderGacha(); this.renderRaces();
+    this.renderDealerStock(); this.renderBoatShop(); this.refreshStats(); this.renderQuests(); this.renderGacha(); this.renderRaces(); this.renderShop();
   }
 
   renderDealerStock() {
-    const stock = document.getElementById('dealerStock'); stock.innerHTML = '';
-    this.game.dealer.stock.forEach((id) => {
-      const fruit = FRUITS[id], price = FRUIT_DEALER.prices[id];
+    const stock = document.getElementById('dealerStock');
+    if (!stock) return;
+    stock.innerHTML = '';
+    (this.game.dealer.stock || []).forEach((id) => {
+      const fruit = FRUITS[id];
+      if (!fruit) return;
+      const price = FRUIT_DEALER.prices[id] || 2000;
       const card = document.createElement('button'); card.className = 'dealer-card'; card.disabled = this.game.ownedFruits.has(id);
-      card.innerHTML = `<span>${fruit.emoji}</span><b>${fruit.name}</b><small>${card.disabled ? 'Owned' : `${price.toLocaleString()} money`}</small>`;
+      card.innerHTML = `<span>${fruit.emoji}</span><b>${fruit.name}</b><small>${card.disabled ? 'Owned' : `${Number(price).toLocaleString()} money`}</small>`;
       card.addEventListener('click', () => { const result = this.game.dealer.buy(id, this.game); this.setTokens(this.game.tokens); this.refreshInventory(); this.renderDealerStock(); this.renderQuests(); this.toast(result.message); });
       stock.appendChild(card);
+    });
+  }
+
+  renderShop() {
+    const wrap = document.getElementById('shopStock');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const g = this.game;
+    Object.values(ACCESSORIES).forEach((a) => {
+      const owned = g.ownedAccessories && g.ownedAccessories.has(a.id);
+      const on = g.equippedAccessory === a.id;
+      const card = document.createElement('button');
+      card.className = 'dealer-card' + (on ? ' selected' : '');
+      card.type = 'button';
+      card.innerHTML = `<span>${a.emoji}</span><b>${a.name}</b><small>${on ? 'Equipped' : owned ? 'Owned — equip' : `${a.price.toLocaleString()} money`}</small>`;
+      card.title = a.blurb || '';
+      card.addEventListener('click', () => {
+        const result = g.accessoryShop.buy(a.id, g);
+        this.setTokens(g.tokens);
+        this.renderShop();
+        this.toast(result.message);
+      });
+      wrap.appendChild(card);
     });
   }
 
@@ -443,7 +500,7 @@ export class UI {
     }
     el.textContent = text;
     el.classList.remove('hidden');
-    if (talk && /quest|talk/i.test(text)) talk.classList.remove('hidden');
+    if (talk && /quest|talk|shop/i.test(text)) talk.classList.remove('hidden');
     else if (talk) talk.classList.add('hidden');
   }
 

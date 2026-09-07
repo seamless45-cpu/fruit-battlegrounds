@@ -30,6 +30,10 @@ export class Player {
     this._wasGround = true;
     this.raceId = 'human';
     this.race = RACES.human;
+    this.faction = null;
+    this.speedMod = 1;
+    this.scaleMul = 1;
+    this.growUntil = 0;
 
     const rig = createPlayerModel();
     this.group = rig.group;
@@ -42,6 +46,8 @@ export class Player {
     this.rightLeg = rig.rightLeg;
     this.head = rig.head;
     this.hips = rig.hips || null;
+    this.torso = rig.torso || null;
+    this.coatMat = rig.coatMat || null;
     this.weaponMesh = null;
     scene.add(this.group);
   }
@@ -66,6 +72,15 @@ export class Player {
     const def = RACES[id] || RACES.human;
     this.raceId = def.id;
     this.race = def;
+  }
+
+  setFaction(id) {
+    this.faction = id === 'marine' ? 'marine' : 'pirate';
+    if (this.coatMat) this.coatMat.color.setHex(this.faction === 'marine' ? 0x24356a : 0x6a1a22);
+  }
+
+  setGrow(seconds) {
+    this.growUntil = performance.now() / 1000 + seconds;
   }
 
   jump() {

@@ -1188,6 +1188,28 @@ const handlers = {
   dh_mash(game) {
     blast(game, game.player.position.x, game.player.position.z, 14, 0.58, 0xe8c9a0, { knockForce: 18, stun: true, stunDur: 1 });
   },
+
+  bd_palm(game, aim) {
+    game.fx.rockRise({
+      x: aim.x, z: aim.z, radius: 9, rise: 0.55, color: 0xe8d48a,
+      onSlam: (x, z) => blast(game, x, z, 11, 0.52, 0xe8d48a, { knockForce: 18, stun: true, stunDur: 0.8 }),
+    });
+  },
+  bd_impact(game) {
+    blast(game, game.player.position.x, game.player.position.z, 14, 0.44, 0xe8d48a, { knockForce: 20, stun: true, stunDur: 1 });
+    game.fx.shockwave({ x: game.player.position.x, z: game.player.position.z, radius: 16, color: 0xffe08a, duration: 0.7, debrisCount: 6 });
+    if (game.sfx) game.sfx.impact();
+  },
+  bd_grow(game) {
+    if (game.player.setGrow) game.player.setGrow(8);
+    game.fx.pillar({ x: game.player.position.x, z: game.player.position.z, height: 28, color: 0xe8d48a, duration: 1.1, rings: 5 });
+    if (game.sfx) game.sfx.levelup();
+  },
+  bd_wrath(game) {
+    blast(game, game.player.position.x, game.player.position.z, 22, 0.78, 0xe8d48a, { stun: true, stunDur: 1.8, knockForce: 24 });
+    game.fx.shake(0.95, 3.2);
+    game.fx.pillar({ x: game.player.position.x, z: game.player.position.z, height: 40, color: 0xffe08a, duration: 1.3, rings: 6 });
+  },
 };
 
 // ------------------------------------------------------------

@@ -1,5 +1,5 @@
 // ============================================================
-//  Enemy manager — remodeled pirates, HP numbers, damage pops.
+//  Enemy manager — island homes, bosses, elites, HP pops.
 // ============================================================
 import * as THREE from 'three';
 import { ENEMY, WORLD } from './config.js';
@@ -8,24 +8,67 @@ import { createEnemyModel, drawHpLabel } from './models.js';
 const _look = new THREE.Vector3();
 
 export class EnemyManager {
-  constructor(scene, getPlayer, onPlayerHit, onKill, fx) {
+  constructor(scene, getPlayer, onPlayerHit, onKill, fx, world) {
     this.scene = scene;
     this.getPlayer = getPlayer;
     this.onPlayerHit = onPlayerHit;
     this.onKill = onKill;
     this.fx = fx;
+    this.world = world || null;
     this.enemies = [];
     this.spawnTimer = 0.4;
+    this.bossTimer = 10;
+    this.eliteTimer = 24;
+    this.seeded = false;
   }
 
-  spawn() {
-    if (this.enemies.length >= ENEMY.maxAlive) return;
+  homes() {
+    if (this.world && this.world.islandCenters && this.world.islandCenters.length) {
+      return this.world.islandCenters;
+    }
+    return [{ id: 'arena', name: 'Grand Arena', x: 0, z: 0, r: WORLD.islandRadius, faction: 'pirate', boss: 'Captain Rook', elite: 'Warlord Ember' }];
+  }
+
+  pickHome() {
+    const homes = this.homes();
+    let best = homes[0], bestN = 1e9;
+    for (const h of homes) {
+      const n = this.enemies.filter((e) => e.alive && e.home && e.home.id === h.id).length;
+      if (n < bestN) { bestN = n; best = h; }
+    }
+    return best;
+  }
+
+  seed() {
+    if (this.seeded) return;
+    this.seeded = true;
+    for (const home of this.homes()) {
+      const n = home.id === 'arena' ? 5 : 3;
+      for (let i = 0; i < n; i++) this.spawn({ home, force: true });
+      if (home.boss) this.spawn({ home, kind: 'boss', name: home.boss, force: true, hpMult: 8, tier: 3 });
+    }
+  }
+
+  spawn(opts = {}) {
+    if (!opts.force && this.enemies.length >= ENEMY.maxAlive) return;
+    const home = opts.home || this.pickHome();
+    const kind = opts.kind || 'grunt';
+    const elite = kind === 'elite';
+    const boss = kind === 'boss' || elite;
+    const faction = opts.faction || home.faction || 'pirate';
+    if (faction === 'neutral') {
+      // arena mixes both
+    }
+    const side = faction === 'marine' ? 'marine' : faction === 'pirate' ? 'pirate' : (Math.random() < 0.5 ? 'pirate' : 'marine');
     const a = Math.random() * Math.PI * 2;
-    const r = 28 + Math.random() * 50;
-    const pos = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
-    const tier = r > 62 ? 3 : r > 48 ? 2 : 1;
-    const hp = ENEMY.maxHp * tier * (0.7 + Math.random() * 0.6);
-    const rig = createEnemyModel(tier);
+    const r = (home.r * 0.18) + Math.random() * (home.r * 0.68);
+    const pos = new THREE.Vector3(home.x + Math.cos(a) * r, 0, home.z + Math.sin(a) * r);
+    let tier = opts.tier || (boss ? 3 : r / Math.max(1, home.r) > 0.7 ? 3 : r / Math.max(1, home.r) > 0.42 ? 2 : 1);
+    if (elite) tier = 4;
+    const hp = ENEMY.maxHp * (opts.hpMult || (elite ? 14 : boss ? 8 : tier)) * (0.75 + Math.random() * 0.5);
+    const rig = createEnemyModel(Math.min(3, tier), { faction: side, elite, boss });
+    const scale = elite ? 2.05 : boss ? 1.55 : 1;
+    rig.group.scale.setScalar(scale);
     rig.group.position.copy(pos);
     this.scene.add(rig.group);
     drawHpLabel(rig.hp, hp, hp);
@@ -34,17 +77,53 @@ export class EnemyManager {
       leftArm: rig.leftArm, rightArm: rig.rightArm, leftLeg: rig.leftLeg, rightLeg: rig.rightLeg,
       hpLabel: rig.hp,
       position: pos.clone(), hp, maxHp: hp,
-      radius: ENEMY.radius, tier, baseY: 0,
+      radius: ENEMY.radius * scale, tier, baseY: 0,
       stunUntil: 0, liftUntil: 0, blindUntil: 0,
       burnDps: 0, burnUntil: 0, knockVel: new THREE.Vector3(),
       alive: true, randDir: new THREE.Vector3(), walk: Math.random() * 10,
       animAttack: 0, animHurt: 0, dying: 0,
+      home, kind, faction: side, name: opts.name || null, wander: Math.random() * 2,
     });
+  }
+
+  _clampHome(e) {
+    const h = e.home;
+    if (!h) {
+      const ir = WORLD.islandRadius - 4;
+      const er = Math.hypot(e.position.x, e.position.z);
+      if (er > ir) { e.position.x *= ir / er; e.position.z *= ir / er; }
+      return;
+    }
+    const dx = e.position.x - h.x, dz = e.position.z - h.z;
+    const er = Math.hypot(dx, dz);
+    const ir = Math.max(3.2, h.r - 2.2);
+    if (er > ir) {
+      e.position.x = h.x + dx * ir / er;
+      e.position.z = h.z + dz * ir / er;
+    }
   }
 
   update(dt, now) {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) { this.spawnTimer = ENEMY.spawnEvery; this.spawn(); }
+    this.bossTimer -= dt;
+    if (this.bossTimer <= 0) {
+      this.bossTimer = 32;
+      const homes = this.homes().filter((h) => h.boss);
+      const h = homes[(Math.random() * homes.length) | 0];
+      if (h && !this.enemies.some((e) => e.alive && e.kind === 'boss' && e.home && e.home.id === h.id)) {
+        this.spawn({ home: h, kind: 'boss', name: h.boss, force: true, hpMult: 8, tier: 3 });
+      }
+    }
+    this.eliteTimer -= dt;
+    if (this.eliteTimer <= 0) {
+      this.eliteTimer = 58;
+      const homes = this.homes().filter((h) => h.elite);
+      const h = homes[(Math.random() * homes.length) | 0];
+      if (h && !this.enemies.some((e) => e.alive && e.kind === 'elite')) {
+        this.spawn({ home: h, kind: 'elite', name: h.elite, force: true, hpMult: 14, tier: 4 });
+      }
+    }
     const player = this.getPlayer();
     for (const e of this.enemies) {
       if (!e.alive) continue;
@@ -70,19 +149,32 @@ export class EnemyManager {
       } else if (!stunned && !lifted) {
         const toP = player.position.clone().sub(e.position); toP.y = 0;
         const dist = toP.length();
+        const aggroR = e.kind === 'elite' ? 95 : e.kind === 'boss' ? 72 : 46;
         if (e.blindUntil > now) {
           e.randDir.set((Math.random() * 2 - 1), 0, (Math.random() * 2 - 1)).normalize();
           e.position.addScaledVector(e.randDir, ENEMY.speed * 0.6 * dt);
           e.group.lookAt(e.position.clone().add(e.randDir));
           moving = true;
-        } else if (dist > 1.6) {
+        } else if (dist < aggroR && dist > 1.6) {
           toP.normalize();
-          e.position.addScaledVector(toP, ENEMY.speed * (1 + (e.tier - 1) * 0.18) * dt);
+          const spd = ENEMY.speed * (1 + (Math.min(3, e.tier) - 1) * 0.18) * (e.kind === 'elite' ? 1.15 : 1);
+          e.position.addScaledVector(toP, spd * dt);
           e.group.lookAt(player.position.x, e.position.y, player.position.z);
-          if (dist < 2.2) {
+          if (dist < 2.4 * (e.kind === 'elite' ? 1.4 : e.kind === 'boss' ? 1.25 : 1)) {
             e.animAttack = 0.28;
-            this.onPlayerHit(ENEMY.touchDamage * e.tier * dt * 6);
+            const touch = ENEMY.touchDamage * Math.min(4, e.tier) * dt * 6 * (e.kind === 'elite' ? 1.8 : e.kind === 'boss' ? 1.4 : 1);
+            this.onPlayerHit(touch);
           }
+          moving = true;
+        } else if (dist >= aggroR) {
+          e.wander = (e.wander || 0) - dt;
+          if (e.wander <= 0) {
+            e.wander = 1.4 + Math.random() * 2.2;
+            const a = Math.random() * Math.PI * 2;
+            e.randDir.set(Math.cos(a), 0, Math.sin(a));
+          }
+          e.position.addScaledVector(e.randDir, ENEMY.speed * 0.42 * dt);
+          e.group.lookAt(e.position.x + e.randDir.x, e.position.y, e.position.z + e.randDir.z);
           moving = true;
         }
       }
@@ -90,9 +182,7 @@ export class EnemyManager {
       else if (e.group.position.y > 0.01) e.group.position.y = Math.max(0, e.group.position.y - 20 * dt);
       else e.group.position.y = 0;
 
-      const ir = WORLD.islandRadius - 4;
-      const er = Math.hypot(e.position.x, e.position.z);
-      if (er > ir) { e.position.x *= ir / er; e.position.z *= ir / er; }
+      this._clampHome(e);
 
       e.group.position.x = e.position.x; e.group.position.z = e.position.z;
       e.walk += dt * (moving ? 12 : 0);

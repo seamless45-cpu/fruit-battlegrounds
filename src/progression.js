@@ -2,9 +2,9 @@
 // Fruit dealer, boat / armory shop, world spawns, local guard.
 // ============================================================
 import * as THREE from 'three';
-import { FRUITS, FRUIT_DEALER, FRUIT_SPAWNS, BOATS, SWORD_PRICES, SWORDS, FIGHTING_STYLES, STYLE_PRICES, GACHA, GACHA_POOL } from './config.js';
+import { FRUITS, FRUIT_DEALER, FRUIT_SPAWNS, BOATS, SWORD_PRICES, SWORDS, FIGHTING_STYLES, STYLE_PRICES, GACHA, GACHA_POOL, ACCESSORIES } from './config.js';
 
-const fruitIds = Object.keys(FRUITS);
+const fruitIds = Object.keys(FRUITS).filter((id) => FRUIT_DEALER.prices[id] != null);
 
 export class FruitDealer {
   constructor() { this.stock = []; this.remaining = 0; this.refresh(); }
@@ -168,6 +168,22 @@ export class Gacha {
         : `${best.rarity.toUpperCase()}! You pulled ${best.item.emoji} ${best.item.ref.name}.`)
       : `10-pull: ${news} new · ${dupes} dupes · best ${best.rarity.toUpperCase()} ${best.item.ref.name}.`;
     return { ok: true, pulls, item: best.item, rarity: best.rarity, dupe: best.dupe, pityL: this.pityL, pityE: this.pityE, message: msg };
+  }
+}
+
+export class AccessoryShop {
+  buy(id, game) {
+    const def = ACCESSORIES[id];
+    if (!def) return { ok: false, message: 'Unknown accessory.' };
+    if (game.ownedAccessories && game.ownedAccessories.has(id)) {
+      if (game.equipAccessory) game.equipAccessory(id);
+      return { ok: true, message: `${def.name} equipped.` };
+    }
+    if (game.tokens < def.price) return { ok: false, message: `Need ${def.price.toLocaleString()} money.` };
+    game.tokens -= def.price;
+    if (game.ownedAccessories) game.ownedAccessories.add(id);
+    if (game.equipAccessory) game.equipAccessory(id);
+    return { ok: true, message: `${def.name} purchased and equipped.` };
   }
 }
 

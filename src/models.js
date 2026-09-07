@@ -84,16 +84,22 @@ export function createPlayerModel() {
     group.add(ring); auraRings.push(ring);
   }
 
-  return { group, aura, auraRings, weaponAnchor, leftArm, rightArm, leftLeg, rightLeg, head, torso, hips };
+  return { group, aura, auraRings, weaponAnchor, leftArm, rightArm, leftLeg, rightLeg, head, torso, hips, coatMat: coat, shirtMat: shirt };
 }
 
-export function createEnemyModel(tier = 1) {
+export function createEnemyModel(tier = 1, opts = {}) {
   const group = new THREE.Group();
-  const skin = std(tier === 3 ? 0xd8b090 : 0xc9a090);
-  const cloth = std(tier === 3 ? 0x4a1020 : tier === 2 ? 0x6a2230 : 0x8a2f3a);
+  const faction = opts.faction || 'pirate';
+  const elite = !!opts.elite;
+  const boss = !!opts.boss || elite;
+  const skin = std(tier === 3 || boss ? 0xd8b090 : 0xc9a090);
+  const clothHex = elite ? 0xc9a227 : faction === 'marine'
+    ? (tier === 3 ? 0x1a3060 : tier === 2 ? 0x2a5080 : 0x3a6aa0)
+    : (tier === 3 ? 0x4a1020 : tier === 2 ? 0x6a2230 : 0x8a2f3a);
+  const cloth = std(clothHex);
   const dark = std(0x1a1014);
-  const metal = std(0xb0b8c8, { metalness: 0.7, roughness: 0.35 });
-  const glow = new THREE.MeshBasicMaterial({ color: 0xff526c, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  const metal = std(elite ? 0xe6c35c : 0xb0b8c8, { metalness: 0.7, roughness: 0.35 });
+  const glow = new THREE.MeshBasicMaterial({ color: elite ? 0xffe08a : faction === 'marine' ? 0x6ab4ff : 0xff526c, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
 
   const torso = mesh(GEO.box, cloth, 1.2, 1.2, 0.6, 0, 1.7, 0);
   group.add(torso);
@@ -128,7 +134,7 @@ export function createEnemyModel(tier = 1) {
 
   const aura = new THREE.Mesh(
     new THREE.RingGeometry(0.85, 1.08, 20),
-    new THREE.MeshBasicMaterial({ color: 0xff3f64, transparent: true, opacity: 0.45, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ color: elite ? 0xffe08a : faction === 'marine' ? 0x4cc6ff : 0xff3f64, transparent: true, opacity: 0.45, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
   );
   aura.rotation.x = -Math.PI / 2; aura.position.y = 0.08; group.add(aura);
 
@@ -255,6 +261,71 @@ export function createBoatMesh(def) {
   }
   g.position.y = 0.1;
   return g;
+}
+
+
+export function makeNameSprite(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 512, 96);
+  ctx.fillStyle = 'rgba(8,16,28,0.62)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(24, 18, 464, 60, 16);
+  else ctx.rect(24, 18, 464, 60);
+  ctx.fill();
+  ctx.font = '700 34px Trebuchet MS, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffe7a8';
+  ctx.fillText(String(text || '').toUpperCase(), 256, 50);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sprite.scale.set(16, 3, 1);
+  return sprite;
+}
+
+export function createShopNpc() {
+  const group = new THREE.Group();
+  const skin = std(0xf3c8a4);
+  const robe = std(0x2a8a78, { metalness: 0.35, roughness: 0.45 });
+  const cream = std(0xf4ead0);
+  const dark = std(0x3a2414);
+  const sash = std(0xc9a227);
+
+  group.add(mesh(GEO.box, robe, 1.25, 1.55, 0.72, 0, 1.65, 0));
+  group.add(mesh(GEO.box, cream, 0.9, 0.5, 0.5, 0, 1.85, 0.16));
+  group.add(mesh(GEO.box, sash, 1.28, 0.16, 0.76, 0, 1.12, 0));
+  group.add(mesh(GEO.sphere, skin, 1.12, 1.18, 1.12, 0, 2.62, 0));
+  group.add(mesh(GEO.sphere, dark, 1.22, 0.55, 1.22, 0, 2.95, -0.04));
+  group.add(mesh(GEO.cyl, dark, 1.7, 0.12, 1.7, 0, 3.12, 0));
+  group.add(mesh(GEO.box, cream, 1.8, 0.08, 0.55, 0, 3.12, 0.7));
+  group.add(mesh(GEO.sphere, std(0x1a1020), 0.16, 0.16, 0.12, -0.22, 2.64, 0.48));
+  group.add(mesh(GEO.sphere, std(0x1a1020), 0.16, 0.16, 0.12, 0.22, 2.64, 0.48));
+  group.add(mesh(GEO.box, robe, 0.34, 0.95, 0.34, -0.82, 1.7, 0));
+  group.add(mesh(GEO.box, robe, 0.34, 0.95, 0.34, 0.82, 1.7, 0));
+  group.add(mesh(GEO.box, dark, 0.4, 1.05, 0.42, -0.32, 0.55, 0));
+  group.add(mesh(GEO.box, dark, 0.4, 1.05, 0.42, 0.32, 0.55, 0));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#3ecf9a';
+  ctx.beginPath(); ctx.arc(64, 64, 56, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#082018'; ctx.lineWidth = 8; ctx.stroke();
+  ctx.fillStyle = '#082018';
+  ctx.font = '900 64px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('$', 64, 72);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const bang = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  bang.scale.set(1.4, 1.4, 1);
+  bang.position.y = 4.15;
+  group.add(bang);
+
+  return { group, bang };
 }
 
 export function createQuestNpc() {

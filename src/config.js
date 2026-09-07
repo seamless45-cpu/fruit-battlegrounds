@@ -39,6 +39,7 @@ export const COLORS = {
   love: 0xff6aa8,
   rumble: 0xc9b44a,
   dough: 0xe8c9a0,
+  buddha: 0xe8d48a,
 };
 
 export const FRUITS = {
@@ -281,6 +282,17 @@ export const FRUITS = {
       { id: 'dh_mash',    label: 'Mash',    cd: 12,  desc: 'A crushing dough press.' },
     ],
   },
+  buddha: {
+    id: 'buddha', name: 'Buddha', emoji: '🧘', color: COLORS.buddha,
+    blurb: 'Sacred giant form — palms, shockwaves, and a golden wrath.',
+    rarity: 'legendary',
+    skills: [
+      { id: 'bd_palm',   label: 'Giant Palm', cd: 3.5, desc: 'A colossal palm slam at the aim.' },
+      { id: 'bd_impact', label: 'Impact',     cd: 6,   desc: 'A ringing shockwave from your fists.' },
+      { id: 'bd_grow',   label: 'Nyorai',     cd: 10,  desc: 'Grow huge for a few seconds.' },
+      { id: 'bd_wrath',  label: 'Wrath',      cd: 16,  desc: 'A golden nova that flattens the field.' },
+    ],
+  },
 };
 
 export const FRUIT_DEALER = {
@@ -291,6 +303,7 @@ export const FRUIT_DEALER = {
     ice: 2000, flame: 2200, light: 3000, magma: 2600,
     storm: 1600, shadow: 2800, venom: 1700, sand: 1500, string: 2600,
     rubber: 1900, soul: 3400, dragon: 3600, magnet: 2500, phoenix: 3800,
+    smoke: 1550, paw: 2700, love: 2900, rumble: 3700, dough: 1850, buddha: 4200,
   },
 };
 export const FRUIT_SPAWNS = { intervalSeconds: 1800, lifetimeSeconds: 900, maxActive: 3 };
@@ -524,6 +537,7 @@ export const INVENTORY_ITEMS = [
   { id: 'love',         type: 'fruit', ref: FRUITS.love,      emoji: FRUITS.love.emoji,      color: COLORS.love },
   { id: 'rumble',       type: 'fruit', ref: FRUITS.rumble,    emoji: FRUITS.rumble.emoji,    color: COLORS.rumble },
   { id: 'dough',        type: 'fruit', ref: FRUITS.dough,     emoji: FRUITS.dough.emoji,     color: COLORS.dough },
+  { id: 'buddha',       type: 'fruit', ref: FRUITS.buddha,    emoji: FRUITS.buddha.emoji,    color: COLORS.buddha },
   { id: 'soulscythe',   type: 'sword', ref: SWORDS.soulscythe, emoji: SWORDS.soulscythe.emoji, color: COLORS.soulscythe },
   { id: 'sunspear',     type: 'sword', ref: SWORDS.sunspear,   emoji: SWORDS.sunspear.emoji,   color: COLORS.sunspear },
   { id: 'frostfang',    type: 'sword', ref: SWORDS.frostfang,  emoji: SWORDS.frostfang.emoji,  color: COLORS.frostfang },
@@ -540,7 +554,7 @@ export const PLAYER = {
   jumpStrength: 16.5, airJumpStrength: 13.5, gravity: 44,
   maxAirJumps: 20, swimSpeed: 5.5, jumpCooldownMs: 130,
 };
-export const ENEMY = { maxHp: 500, speed: 6, radius: 1.0, touchDamage: 8, spawnEvery: 2.0, maxAlive: 16 };
+export const ENEMY = { maxHp: 500, speed: 6, radius: 1.0, touchDamage: 8, spawnEvery: 2.6, maxAlive: 36 };
 
 export const MELEE = {
   combat:        { reach: 6.2, width: 3.6, height: 4.8, dmg: 0.16 },
@@ -583,9 +597,35 @@ export const GACHA_POOL = INVENTORY_ITEMS
 
 export const WORLD = {
   islandRadius: 86,
-  oceanRadius: 280,
+  oceanRadius: 360,
   dock: { x: 0, z: 90, radius: 14 },
   questNpc: { x: 16, z: 22, radius: 4.2 },
+  shopNpc: { x: -16, z: 22, radius: 4.2 },
+};
+
+export const SIDES = {
+  pirate: { id: 'pirate', name: 'Pirates', emoji: '🏴‍☠️', color: 0x8a1a28, blurb: 'Freedom, plunder, and a black flag.' },
+  marine: { id: 'marine', name: 'Marines', emoji: '⚓', color: 0x2f5fa0, blurb: 'Justice, order, and a white coat.' },
+};
+
+export const ISLANDS = [
+  { id: 'arena',  name: 'Grand Arena',  x: 0,    z: 0,    r: 86, color: 0x4a8a45, faction: 'neutral', skipMesh: true, boss: 'Captain Rook', elite: 'Warlord Ember' },
+  { id: 'grove',  name: 'Fruit Grove',  x: -132, z: -96,  r: 20, color: 0x356943, faction: 'pirate',  trees: 5 },
+  { id: 'cinder', name: 'Cinder Rock',  x: 138,  z: -78,  r: 20, color: 0x72553d, faction: 'pirate',  trees: 4 },
+  { id: 'mist',   name: 'Mist Atoll',   x: 36,   z: 148,  r: 20, color: 0x426e85, faction: 'marine',  trees: 5 },
+  { id: 'ford',   name: 'Marine Ford',  x: 210,  z: 55,   r: 24, color: 0x8aa4c0, faction: 'marine',  trees: 2, boss: 'Marine Warden', elite: 'Vice Admiral' },
+  { id: 'cove',   name: 'Pirate Cove',  x: -205, z: 90,   r: 22, color: 0x3a2a22, faction: 'pirate',  trees: 3, boss: 'Cove King', elite: 'Ember Yonko' },
+  { id: 'sky',    name: 'Sky Atoll',    x: 90,   z: -195, r: 16, color: 0xd8e8f4, faction: 'neutral', trees: 3, boss: 'Sky Priest' },
+  { id: 'jungle', name: 'Deep Jungle',  x: -70,  z: 210,  r: 20, color: 0x1e5a32, faction: 'pirate',  trees: 6, boss: 'Beast Guard' },
+];
+
+export const ACCESSORIES = {
+  pirate_hat:    { id: 'pirate_hat',    name: 'Pirate Hat',    emoji: '🎩', price: 1200, dmg: 0.08, hp: 0,   speed: 0,    loot: 0,    blurb: '+8% damage.' },
+  marine_cap:    { id: 'marine_cap',    name: 'Marine Cap',    emoji: '🧢', price: 1200, dmg: 0,    hp: 250, speed: 0,    loot: 0,    blurb: '+250 maximum HP.' },
+  black_cape:    { id: 'black_cape',    name: 'Black Cape',    emoji: '🧥', price: 1600, dmg: 0,    hp: 0,   speed: 0.08, loot: 0,    blurb: '+8% move speed.' },
+  gold_ring:     { id: 'gold_ring',     name: 'Gold Ring',     emoji: '💍', price: 2200, dmg: 0,    hp: 0,   speed: 0,    loot: 0.25, blurb: '+25% money from kills.' },
+  seastone_band: { id: 'seastone_band', name: 'Seastone Band', emoji: '🪨', price: 2800, dmg: 0.12, hp: 80,  speed: 0,    loot: 0,    blurb: '+12% damage and +80 HP.' },
+  sniper_gogs:   { id: 'sniper_gogs',   name: 'Sniper Gogs',   emoji: '🥽', price: 1800, dmg: 0.05, hp: 0,   speed: 0.05, loot: 0,    blurb: '+5% damage and +5% speed.' },
 };
 
 export const GIFT_CODES = {
@@ -613,6 +653,15 @@ export const SECRET_QUESTS = [
 ];
 
 export const AWAKEN = { killNeed: 20, cost: 2200, dmg: 0.4 };
+
+export const ELITE_QUESTS = [
+  { id: 'eq_kills5', title: 'Elite: First Blood', desc: 'Defeat 5 fighters. Elite board pays tenfold.', stat: 'kills', need: 5, reward: { tokens: 4000, xp: 800 } },
+  { id: 'eq_kills25', title: 'Elite: Arena Heat', desc: 'Defeat 25 fighters.', stat: 'kills', need: 25, reward: { tokens: 18000, xp: 3200 } },
+  { id: 'eq_fruit', title: 'Elite: Fruit Hunt', desc: 'Collect or buy any fruit.', stat: 'fruits', need: 1, reward: { tokens: 7000, xp: 1200 } },
+  { id: 'eq_boat', title: 'Elite: Sea Legs', desc: 'Purchase any boat.', stat: 'boats', need: 1, reward: { tokens: 9000, xp: 1500 } },
+  { id: 'eq_boss', title: 'Elite: Named Hunt', desc: 'Defeat any island boss.', stat: 'bosses', need: 1, reward: { tokens: 12000, xp: 2000 } },
+  { id: 'eq_elite', title: 'Elite: Warlord', desc: 'Defeat an elite boss.', stat: 'elites', need: 1, reward: { tokens: 24000, xp: 4000 } },
+];
 
 export const RACES = {
   human:    { id: 'human',    name: 'Human',    emoji: '🧑', speed: 1,    swim: 1,    jump: 1,    fall: 1,    hp: 1,    dmg: 1,    blurb: 'Balanced. No tricks — just will.' },
