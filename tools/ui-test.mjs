@@ -204,9 +204,10 @@ t('settings panel: toggles, ranges and presets', () => {
 
 t('HUD tracks player state', () => {
   const p = world.player;
-  p.hp = p.maxHp * 0.4; p.tokens = 4242; p.kills = 7;
   p.addXp(999999);
   for (let i = 0; i < 20; i++) step();
+  p.hp = p.maxHp * 0.4; p.tokens = 4242; p.kills = 7;   // set after the sim so kills can't skew it
+  for (let i = 0; i < 3; i++) step();
   const hpText = document.getElementById('pcHpText').textContent;
   const lvl = document.getElementById('pcLevel').textContent;
   const tokens = document.getElementById('pcTokens').textContent;

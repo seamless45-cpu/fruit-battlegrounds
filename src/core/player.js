@@ -16,6 +16,10 @@ export class Player extends Entity {
       look: { skin: 0xf1c27d, shirt: 0x1e293b, pants: 0x0f172a, accent: 0xa855f7, hair: 0x241608, eye: 0xa5f3fc, cape: 0x6d28d9 },
     });
 
+    // start facing away from the third-person camera
+    this.yaw = Math.PI;
+    this.mesh.rotation.y = this.yaw;
+
     // ---- equipment (fruit and sword are independent slots) ----
     this.fruit = 'gravity';
     this.weapon = 'gravityblade';
