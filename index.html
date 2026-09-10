@@ -1,1 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Fruit Battlegrounds — 3D</title>
+<link rel="stylesheet" href="./style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <canvas id="scene"></canvas>
 
+  <!-- ============ HUD ============ -->
+  <div id="hud">
+    <!-- screen tint / red shift (Fatal Destruction, damage flash) -->
+    <div id="screenTint"></div>
+    <div id="damageVignette"></div>
+    <div id="flashLayer"></div>
+
+    <!-- crosshair -->
+    <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+
+    <!-- top left: player card -->
+    <div id="playerCard">
+      <div class="pc-row">
+        <div class="pc-avatar" id="pcAvatar">G</div>
+        <div class="pc-info">
+          <div class="pc-name"><span id="pcName">Player</span> <span class="pc-lvl">Lv <b id="pcLevel">1</b></span></div>
+          <div class="bar hp"><div class="bar-fill" id="pcHpFill"></div><span class="bar-text" id="pcHpText">100%</span></div>
+          <div class="bar xp"><div class="bar-fill" id="pcXpFill"></div><span class="bar-text" id="pcXpText">0%</span></div>
+        </div>
+      </div>
+      <div class="pc-row pc-stats">
+        <span class="stat" title="Kill Tokens — used to upgrade Death Gravity Slashes">🪙 <b id="pcTokens">0</b></span>
+        <span class="stat" title="Kills">☠ <b id="pcKills">0</b></span>
+        <span class="stat" title="Enemies remaining">👾 <b id="pcEnemies">0</b></span>
+      </div>
+    </div>
+
+    <!-- top right -->
+    <div id="topRight">
+      <div id="perfBox"><span id="fpsText">60</span> FPS</div>
+      <button id="btnSettings" class="icon-btn" title="Settings (O)">⚙</button>
+      <button id="btnHelp" class="icon-btn" title="Controls (H)">?</button>
+    </div>
+
+    <!-- middle right : skill panels -->
+    <div id="skillDock">
+      <div class="panel" id="fruitPanel">
+        <div class="panel-head">
+          <span class="panel-dot" id="fruitDot"></span>
+          <span class="panel-title" id="fruitTitle">GRAVITY</span>
+          <span class="panel-sub" id="fruitSub">FRUIT</span>
+          <button class="panel-close" data-close="fruitPanel" title="Hide">×</button>
+        </div>
+        <div class="skills" id="fruitSkills"></div>
+      </div>
+
+      <div class="panel" id="weaponPanel">
+        <div class="panel-head">
+          <span class="panel-dot" id="weaponDot"></span>
+          <span class="panel-title" id="weaponTitle">GRAVITY BLADE</span>
+          <span class="panel-sub" id="weaponSub">SWORD</span>
+          <button class="panel-close" data-close="weaponPanel" title="Hide">×</button>
+        </div>
+        <div class="skills" id="weaponSkills"></div>
+      </div>
+
+      <div id="dockTabs">
+        <button class="dock-tab" data-open="fruitPanel" hidden>FRUIT ▸</button>
+        <button class="dock-tab" data-open="weaponPanel" hidden>SWORD ▸</button>
+      </div>
+    </div>
+
+    <!-- charge meter (Gravity Blade skill 1) -->
+    <div id="chargeMeter" hidden>
+      <div class="cm-label">SUPERFORCE CHARGE</div>
+      <div class="cm-bar"><div class="cm-fill" id="cmFill"></div></div>
+      <div class="cm-val"><span id="cmVal">0</span>%</div>
+    </div>
+
+    <!-- channel bar (Pole: Juicio Continuo / Thunder ball hold) -->
+    <div id="channelBar" hidden>
+      <div class="ch-label" id="chLabel">CHARGING</div>
+      <div class="ch-bar"><div class="ch-fill" id="chFill"></div></div>
+      <div class="ch-val"><span id="chVal">0</span>%</div>
+    </div>
+
+    <!-- bottom center : inventory (square horizontal slots) -->
+    <div id="inventory">
+      <div class="inv-head">
+        <button class="inv-tab active" data-tab="fruit">FRUIT</button>
+        <button class="inv-tab" data-tab="sword">SWORD</button>
+        <span class="inv-hint">click a slot to equip / unequip</span>
+      </div>
+      <div class="inv-slots" id="invSlots"></div>
+      <div class="inv-foot">
+        <span class="eq" id="eqFruit">Fruit: —</span>
+        <span class="eq" id="eqSword">Sword: —</span>
+      </div>
+    </div>
+
+    <!-- floating damage numbers -->
+    <div id="dmgLayer"></div>
+
+    <!-- toasts -->
+    <div id="toastLayer"></div>
+  </div>
+
+  <!-- ============ SETTINGS (advanced graphics) ============ -->
+  <div id="settingsModal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Advanced Graphics Settings</h2>
+        <button class="modal-close" id="btnCloseSettings">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="presets">
+          <button class="preset" data-preset="Low">Low</button>
+          <button class="preset" data-preset="Medium">Medium</button>
+          <button class="preset" data-preset="High">High</button>
+          <button class="preset" data-preset="Ultra">Ultra</button>
+        </div>
+        <div class="settings-grid" id="settingsGrid"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="btnResetSettings">Reset to defaults</button>
+        <span class="spacer"></span>
+        <span class="foot-note">Saved automatically</span>
+        <button class="btn primary" id="btnDoneSettings">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ HELP ============ -->
+  <div id="helpModal" class="modal" hidden>
+    <div class="modal-card small">
+      <div class="modal-head">
+        <h2>Controls</h2>
+        <button class="modal-close" id="btnCloseHelp">×</button>
+      </div>
+      <div class="modal-body help-body">
+        <div class="help-col">
+          <h3>Movement</h3>
+          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</p>
+          <p><kbd>Space</kbd> Jump / <kbd>Shift</kbd> Sprint</p>
+          <p><kbd>Mouse</kbd> Look &amp; aim</p>
+        </div>
+        <div class="help-col">
+          <h3>Combat</h3>
+          <p><kbd>LMB</kbd> Weapon M1 combo</p>
+          <p><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd><kbd>F</kbd> Fruit skills</p>
+          <p><kbd>1</kbd>–<kbd>4</kbd> Sword skills</p>
+          <p><kbd>Hold</kbd> a skill to charge it</p>
+        </div>
+        <div class="help-col">
+          <h3>Interface</h3>
+          <p><kbd>O</kbd> Graphics settings</p>
+          <p><kbd>H</kbd> This panel</p>
+          <p><kbd>Esc</kbd> Release mouse</p>
+          <p>Click the arena to re-capture the mouse</p>
+          <p>Skill panels can be hidden with <b>×</b></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ START / PAUSE OVERLAY ============ -->
+  <div id="startOverlay">
+    <div class="so-card">
+      <h1>FRUIT <span>BATTLEGROUNDS</span></h1>
+      <p class="so-tag">Master Gravity, Lightning &amp; Quake — become the strongest fighter alive.</p>
+      <div class="so-fruits">
+        <div class="so-fruit" style="--c:#a855f7">GRAVITY</div>
+        <div class="so-fruit" style="--c:#38bdf8">LIGHTNING</div>
+        <div class="so-fruit" style="--c:#94a3b8">QUAKE</div>
+      </div>
+      <button id="btnPlay" class="btn primary big">CLICK TO PLAY</button>
+      <div class="so-hint">Mouse look · <kbd>Z X C V B F</kbd> fruit skills · <kbd>1</kbd>–<kbd>4</kbd> sword skills · <kbd>LMB</kbd> slash</div>
+    </div>
+  </div>
+
+  <div id="unlockOverlay" hidden><div class="uo-inner">CLICK TO RESUME<br><small>the mouse was released</small></div></div>
+
+  <div id="loading">loading battlegrounds…</div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
