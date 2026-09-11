@@ -173,6 +173,35 @@ unlockOverlay.addEventListener('pointerdown', () => input.requestLock());
 
 document.addEventListener('pointerdown', () => audio.init(), { once: true });
 
+/* ------------------------------------------- adaptive performance control */
+/**
+ * Keeps the frame budget by scaling render resolution (and with it the
+ * particle budget) down when frames get long, and back up when they recover.
+ * Never touches the user's saved settings — it writes only `dynamicScale`.
+ */
+const perf = { acc: 0, frames: 0, timer: 0, startedAt: 0 };
+function adaptiveUpdate(realDt) {
+  const cap = Settings.get('fpsCap');
+  if (!Settings.get('adaptive') || cap > 0) {
+    if (Settings.get('dynamicScale') !== 1) Settings.setRuntime('dynamicScale', 1);
+    return;
+  }
+  if (!started) return;
+  perf.startedAt += realDt;
+  if (perf.startedAt < 3) return;                 // ignore first-second warm-up
+  perf.acc += realDt; perf.frames++; perf.timer += realDt;
+  if (perf.timer < 1.5) return;
+
+  const fps = perf.frames / perf.acc;
+  perf.acc = 0; perf.frames = 0; perf.timer = 0;
+  let scale = Settings.get('dynamicScale') || 1;
+  if (fps < 42 && scale > 0.55) scale = Math.max(0.55, scale - 0.12);
+  else if (fps > 57 && scale < 1) scale = Math.min(1, scale + 0.08);
+  if (Math.abs(scale - (Settings.get('dynamicScale') || 1)) > 0.005) {
+    Settings.setRuntime('dynamicScale', scale);
+  }
+}
+
 /* ------------------------------------------------------------- game loop */
 let fpsAccum = 0;
 let lastTime = performance.now();
@@ -208,11 +237,23 @@ function frame() {
   world.player._lastHp = world.player.hp;
 
   input.endFrame();
+  adaptiveUpdate(realDt);
   engine.render();
 }
 
-document.getElementById('loading').classList.add('gone');
-frame();
+// build the FX pools and compile every shader while the loading text is up,
+// so the first cast of each skill doesn't stall the frame
+// Warm-up pass: build every pool, leave one of each effect on screen, then
+// render ONE real frame. three only compiles+links a shader on its first
+// draw, so a real frame here is what stops mid-fight shader hitches.
+fx.prewarm();
+world.prewarmEnemy();
+engine.render();
+world.prewarmCleanup();
+fx.clear();
 
-// expose for debugging
+document.getElementById('loading').classList.add('gone');
+
+// expose for debugging before the first frame so a throwing frame is inspectable
 window.FB = { world, fx, engine, ui, input, rig, Settings, THREE };
+frame();

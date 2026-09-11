@@ -4,6 +4,19 @@
  */
 import * as THREE from 'three';
 
+/**
+ * Geometry cache. Every character shares the same unit-scale boxes, so
+ * spawning a wave costs materials + Object3Ds instead of 20 new GPU buffers.
+ * Cached geometries are flagged `shared` so Entity.destroy() never frees them.
+ */
+const GEO_CACHE = new Map();
+function cached(key, make) {
+  let g = GEO_CACHE.get(key);
+  if (!g) { g = make(); g.userData.shared = true; GEO_CACHE.set(key, g); }
+  return g;
+}
+const box = (w, h, d) => cached(`box:${w},${h},${d}`, () => new THREE.BoxGeometry(w, h, d));
+
 function mat(color, opts = {}) {
   return new THREE.MeshStandardMaterial({
     color, roughness: opts.roughness ?? 0.75, metalness: opts.metalness ?? 0.05,
@@ -20,7 +33,8 @@ export function makeHumanoid({
   scale = 1, hair = 0x2b1b12, eye = 0x9ef1ff, cape = null,
 } = {}) {
   const group = new THREE.Group();
-  const S = scale;
+  const S = 1;                    // unit scale — group.scale carries the size
+  group.scale.setScalar(scale);
 
   const bodyMat = mat(shirt);
   const skinMat = mat(skin);
@@ -32,12 +46,12 @@ export function makeHumanoid({
   hips.position.y = 0.92 * S;
   group.add(hips);
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62 * S, 0.78 * S, 0.36 * S), bodyMat);
+  const torso = new THREE.Mesh(box(0.62 * S, 0.78 * S, 0.36 * S), bodyMat);
   torso.position.y = 0.39 * S;
   torso.castShadow = true;
   hips.add(torso);
 
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.66 * S, 0.12 * S, 0.4 * S), mat(accent, { roughness: 0.5 }));
+  const belt = new THREE.Mesh(box(0.66 * S, 0.12 * S, 0.4 * S), mat(accent, { roughness: 0.5 }));
   belt.position.y = 0.02 * S;
   hips.add(belt);
 
@@ -45,18 +59,18 @@ export function makeHumanoid({
   const neck = new THREE.Group();
   neck.position.y = 0.82 * S;
   hips.add(neck);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42 * S, 0.42 * S, 0.4 * S), skinMat);
+  const head = new THREE.Mesh(box(0.42 * S, 0.42 * S, 0.4 * S), skinMat);
   head.position.y = 0.22 * S;
   head.castShadow = true;
   neck.add(head);
-  const hairMesh = new THREE.Mesh(new THREE.BoxGeometry(0.46 * S, 0.16 * S, 0.44 * S), hairMat);
+  const hairMesh = new THREE.Mesh(box(0.46 * S, 0.16 * S, 0.44 * S), hairMat);
   hairMesh.position.y = 0.42 * S;
   neck.add(hairMesh);
 
   // eyes (glowing)
   const eyeMat = new THREE.MeshBasicMaterial({ color: eye });
   for (const sx of [-1, 1]) {
-    const e = new THREE.Mesh(new THREE.BoxGeometry(0.07 * S, 0.07 * S, 0.02 * S), eyeMat);
+    const e = new THREE.Mesh(box(0.07 * S, 0.07 * S, 0.02 * S), eyeMat);
     e.position.set(sx * 0.1 * S, 0.25 * S, 0.2 * S);
     neck.add(e);
   }
@@ -66,14 +80,14 @@ export function makeHumanoid({
     const shoulder = new THREE.Group();
     shoulder.position.set(side * 0.4 * S, 0.72 * S, 0);
     hips.add(shoulder);
-    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.19 * S, 0.42 * S, 0.19 * S), skinMat);
+    const upper = new THREE.Mesh(box(0.19 * S, 0.42 * S, 0.19 * S), skinMat);
     upper.position.y = -0.21 * S;
     upper.castShadow = true;
     shoulder.add(upper);
     const elbow = new THREE.Group();
     elbow.position.y = -0.42 * S;
     shoulder.add(elbow);
-    const fore = new THREE.Mesh(new THREE.BoxGeometry(0.17 * S, 0.4 * S, 0.17 * S), skinMat);
+    const fore = new THREE.Mesh(box(0.17 * S, 0.4 * S, 0.17 * S), skinMat);
     fore.position.y = -0.2 * S;
     elbow.add(fore);
     const hand = new THREE.Group();
@@ -88,17 +102,17 @@ export function makeHumanoid({
     const hip = new THREE.Group();
     hip.position.set(side * 0.17 * S, 0, 0);
     hips.add(hip);
-    const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.23 * S, 0.46 * S, 0.23 * S), pantsMat);
+    const thigh = new THREE.Mesh(box(0.23 * S, 0.46 * S, 0.23 * S), pantsMat);
     thigh.position.y = -0.23 * S;
     thigh.castShadow = true;
     hip.add(thigh);
     const knee = new THREE.Group();
     knee.position.y = -0.46 * S;
     hip.add(knee);
-    const shin = new THREE.Mesh(new THREE.BoxGeometry(0.21 * S, 0.44 * S, 0.21 * S), pantsMat);
+    const shin = new THREE.Mesh(box(0.21 * S, 0.44 * S, 0.21 * S), pantsMat);
     shin.position.y = -0.22 * S;
     knee.add(shin);
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.24 * S, 0.12 * S, 0.34 * S), mat(0x111827));
+    const foot = new THREE.Mesh(box(0.24 * S, 0.12 * S, 0.34 * S), mat(0x111827));
     foot.position.set(0, -0.44 * S, 0.06 * S);
     knee.add(foot);
     return { hip, knee, foot };

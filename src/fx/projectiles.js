@@ -6,6 +6,18 @@ import * as THREE from 'three';
 import { rand, TAU, tmp } from '../core/utils.js';
 import { Settings } from '../core/settings.js';
 
+// Every projectile shape is built ONCE and shared. makeMesh() used to allocate
+// fresh geometries for every pooled projectile, so renderer.info.memory
+// .geometries crept upwards for as long as the game was played.
+const GEO = {};
+const geo = (key, make) => {
+  let g = GEO[key];
+  if (!g) { g = make(); g.userData.shared = true; GEO[key] = g; }
+  return g;
+};
+// shared cloud-blob shapes (random radii used to allocate 6 per cloud)
+const BLOB_GEOS = [0.55, 0.68, 0.8, 0.92, 1.0].map((r) => geo(`blob:${r}`, () => new THREE.IcosahedronGeometry(r, 2)));
+
 function glowTexture() {
   const S = 128, c = document.createElement('canvas');
   c.width = c.height = S;
@@ -40,7 +52,7 @@ export class ProjectileSystem {
       case 'rock': {
         const g = new THREE.Group();
         const m = new THREE.Mesh(
-          new THREE.IcosahedronGeometry(1, 1),
+          geo('rock', () => new THREE.IcosahedronGeometry(1, 1)),
           new THREE.MeshStandardMaterial({ color: 0x3b3230, roughness: 1, metalness: 0, emissive: 0xff4400, emissiveIntensity: 0.55, flatShading: true }),
         );
         g.add(m);
@@ -57,7 +69,9 @@ export class ProjectileSystem {
         const g = new THREE.Group();
         const mat = new THREE.MeshStandardMaterial({ color: 0xdfe8ff, roughness: 1, emissive: 0x6ea8ff, emissiveIntensity: 0.6, transparent: true, opacity: 0.95 });
         for (let i = 0; i < 6; i++) {
-          const s = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.55, 1.0), 2), mat);
+          // shared blob shapes: 6 fresh geometries per cloud used to balloon
+          // renderer.info.memory.geometries every time one was built
+          const s = new THREE.Mesh(BLOB_GEOS[i % BLOB_GEOS.length], mat);
           s.position.set(rand(-1.1, 1.1), rand(-0.35, 0.45), rand(-0.8, 0.8));
           g.add(s);
         }
@@ -66,12 +80,12 @@ export class ProjectileSystem {
       case 'ball': {
         const g = new THREE.Group();
         const core = new THREE.Mesh(
-          new THREE.SphereGeometry(1, 24, 18),
+          geo('ball', () => new THREE.SphereGeometry(1, 24, 18)),
           new THREE.MeshStandardMaterial({ color: 0x0a0a12, roughness: 0.35, metalness: 0.2, emissive: 0x2b1a55, emissiveIntensity: 0.8 }),
         );
         g.add(core);
         const shell = new THREE.Mesh(
-          new THREE.SphereGeometry(1.18, 24, 18),
+          geo('ballShell', () => new THREE.SphereGeometry(1.18, 24, 18)),
           new THREE.MeshBasicMaterial({ color: 0x8b5cf6, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false, wireframe: true }),
         );
         g.add(shell);
@@ -81,15 +95,15 @@ export class ProjectileSystem {
       case 'beast': {
         const g = new THREE.Group();
         const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending, depthWrite: false });
-        const body = new THREE.Mesh(new THREE.ConeGeometry(0.62, 2.6, 6), mat);
+        const body = new THREE.Mesh(geo('beastBody', () => new THREE.ConeGeometry(0.62, 2.6, 6)), mat);
         body.rotation.x = Math.PI / 2;
         g.add(body);
-        const head = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.0, 5), mat);
+        const head = new THREE.Mesh(geo('beastHead', () => new THREE.ConeGeometry(0.42, 1.0, 5)), mat);
         head.rotation.x = -Math.PI / 2;
         head.position.z = 1.5;
         g.add(head);
         for (let i = 0; i < 4; i++) {
-          const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 1.15), mat);
+          const leg = new THREE.Mesh(geo('beastLeg', () => new THREE.BoxGeometry(0.16, 0.16, 1.15)), mat);
           leg.position.set(i < 2 ? -0.45 : 0.45, -0.42, i % 2 === 0 ? 0.55 : -0.45);
           leg.rotation.x = 0.5;
           g.add(leg);
@@ -105,7 +119,7 @@ export class ProjectileSystem {
       default: {
         const g = new THREE.Group();
         const core = new THREE.Mesh(
-          new THREE.IcosahedronGeometry(1, 2),
+          geo('orb', () => new THREE.IcosahedronGeometry(1, 2)),
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
         );
         g.add(core);
@@ -128,6 +142,17 @@ export class ProjectileSystem {
     m.visible = true;
     this.group.add(m);
     return m;
+  }
+
+  /** Pre-create `counts` meshes per type so casts never allocate mid-fight. */
+  prewarm(counts = {}) {
+    for (const [type, n] of Object.entries(counts)) {
+      for (let i = 0; i < n; i++) {
+        const m = this.acquire(type, 0xffffff);
+        if (i === 0) { m.visible = true; m.position.set(0, -4000, 0); }  // stays on screen for the warm-up frame
+        else { m.visible = false; this.group.remove(m); (this.pools[type] ||= []).push(m); }
+      }
+    }
   }
 
   release(p) {

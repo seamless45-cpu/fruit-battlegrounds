@@ -43,6 +43,7 @@ export class TsunamiSystem {
     this.group = new THREE.Group();
     scene.add(this.group);
     this.waves = [];
+    this.pool = [];
     this.geo = new THREE.PlaneGeometry(1, 1, 48, 14);
   }
 
@@ -52,24 +53,38 @@ export class TsunamiSystem {
    *  color, damage, knockback, onHit(enemy)
    */
   spawn(o) {
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 }, uCurl: { value: o.curl !== undefined ? o.curl : 5.5 },
-        uH: { value: o.height || 13 }, uLife: { value: 1 },
-        uDeep: { value: new THREE.Color(o.color !== undefined ? o.color : 0x1d6fb8) },
-        uFoam: { value: new THREE.Color(o.foam !== undefined ? o.foam : 0xdff3ff) },
-      },
-      vertexShader: VERT, fragmentShader: FRAG,
-      transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    });
-    const mesh = new THREE.Mesh(this.geo, mat);
+    // Pooled: disposing the material after every wave used to drop the last
+    // reference to its GL program, so three deleted and recompiled the shader
+    // on the next wave -> a visible stutter every single time.
+    let w = this.pool.pop();
+    if (!w) {
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 }, uCurl: { value: o.curl !== undefined ? o.curl : 5.5 },
+          uH: { value: o.height || 13 }, uLife: { value: 1 },
+          uDeep: { value: new THREE.Color(o.color !== undefined ? o.color : 0x1d6fb8) },
+          uFoam: { value: new THREE.Color(o.foam !== undefined ? o.foam : 0xdff3ff) },
+        },
+        vertexShader: VERT, fragmentShader: FRAG,
+        transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(this.geo, mat);
+      mesh.renderOrder = 5;
+      this.group.add(mesh);
+      w = { mesh, mat, hit: new Set() };
+    }
+    const mat = w.mat, mesh = w.mesh;
+    mat.uniforms.uCurl.value = o.curl !== undefined ? o.curl : 5.5;
+    mat.uniforms.uH.value = o.height || 13;
+    mat.uniforms.uLife.value = 1;
+    mat.uniforms.uDeep.value.set(o.color !== undefined ? o.color : 0x1d6fb8);
+    mat.uniforms.uFoam.value.set(o.foam !== undefined ? o.foam : 0xdff3ff);
+    mesh.visible = true;
     mesh.scale.set(o.width || 46, 1, 1);
     mesh.rotation.y = Math.atan2(o.dir.x, o.dir.z);
     mesh.position.set(o.origin.x, 0, o.origin.z);
-    mesh.renderOrder = 5;
-    this.group.add(mesh);
 
-    const w = {
+    Object.assign(w, {
       mesh, mat,
       dir: o.dir.clone().setY(0).normalize(),
       pos: o.origin.clone(),
@@ -79,10 +94,10 @@ export class TsunamiSystem {
       width: o.width || 46,
       height: o.height || 13,
       onHit: o.onHit || null,
-      hit: new Set(),
       t: 0,
       foamT: 0,
-    };
+    });
+    w.hit.clear();
     this.waves.push(w);
     return w;
   }
@@ -131,15 +146,15 @@ export class TsunamiSystem {
       }
 
       if (w.traveled >= w.distance) {
-        this.group.remove(w.mesh);
-        w.mat.dispose();
+        w.mesh.visible = false;
+        this.pool.push(w);          // reuse the material, keep the shader warm
         this.waves.splice(i, 1);
       }
     }
   }
 
   clear() {
-    for (const w of this.waves) { this.group.remove(w.mesh); w.mat.dispose(); }
+    for (const w of this.waves) { w.mesh.visible = false; this.pool.push(w); }
     this.waves.length = 0;
   }
 }

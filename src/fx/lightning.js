@@ -90,6 +90,7 @@ export class LightningSystem {
     scene.add(this.group);
     this._resize(Settings.get('maxBolts'));
     Settings.onChange((k) => { if (k === 'maxBolts' || k === '*') this._resize(Settings.get('maxBolts')); });
+    this._camX = 1e9; this._camY = 1e9; this._camZ = 1e9;
     this._v = new THREE.Vector3();
     this._toCam = new THREE.Vector3();
     this._dir = new THREE.Vector3();
@@ -214,9 +215,15 @@ export class LightningSystem {
         if (i < n - 1) idxCount += 6;
       }
     }
-    b.geometry.attributes.position.needsUpdate = true;
-    b.geometry.attributes.buv.needsUpdate = true;
     b.geometry.setDrawRange(0, idxCount);
+    b.built = true;
+    if (v === 0) return;
+    // upload only the slice we actually filled (a 40-segment bolt uses ~100 of
+    // the 1152 reserved vertices) instead of the whole buffer every frame
+    const pa = b.geometry.attributes.position;
+    const ua = b.geometry.attributes.buv;
+    pa.clearUpdateRanges(); pa.addUpdateRange(0, v * 3); pa.needsUpdate = true;
+    ua.clearUpdateRanges(); ua.addUpdateRange(0, v * 2); ua.needsUpdate = true;
   }
 
   _updateIntensity(b, dt) {
@@ -231,16 +238,23 @@ export class LightningSystem {
   }
 
   update(dt) {
+    // the ribbon is camera-facing, so it only needs rebuilding when the camera
+    // actually moves — standing still costs nothing
+    const cp = this.camera.position;
+    const camMoved = (cp.x - this._camX) ** 2 + (cp.y - this._camY) ** 2 + (cp.z - this._camZ) ** 2 > 1e-4;
+    this._camX = cp.x; this._camY = cp.y; this._camZ = cp.z;
+
     for (const b of this.bolts) {
       if (!b.active) continue;
       b.alive += dt;
       if (b.alive >= b.life) {
         b.active = false;
+        b.built = false;
         b.mesh.visible = false;
         b.geometry.setDrawRange(0, 0);
         continue;
       }
-      this._updateGeometry(b);
+      if (camMoved || !b.built) this._updateGeometry(b);
       this._updateIntensity(b, dt);
     }
   }

@@ -12,6 +12,9 @@ const BAR_BG = new THREE.MeshBasicMaterial({ color: 0x0b0f18, transparent: true,
 const BAR_FG = new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, depthTest: false });
 const BAR_FG_HURT = new THREE.MeshBasicMaterial({ color: 0xff5470, transparent: true, depthTest: false });
 const barGeo = new THREE.PlaneGeometry(1, 1);
+// shared singletons — dispose() must never free these
+barGeo.userData.shared = true;
+for (const m of [BAR_BG, BAR_FG, BAR_FG_HURT]) m.userData.shared = true;
 
 export class Entity {
   constructor(world, opts = {}) {
@@ -230,7 +233,17 @@ export class Entity {
     return stunned;
   }
 
+  /**
+   * Remove the entity and free its GPU buffers. Characters build ~20 small
+   * geometries each, so without this the arena leaks a few megabytes per wave.
+   */
   destroy() {
     this.world.scene.remove(this.mesh);
+    this.mesh.traverse((o) => {
+      if (!o.isMesh && !o.isPoints && !o.isLine) return;
+      if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) if (m && !m.userData.shared) m.dispose();
+    });
   }
 }

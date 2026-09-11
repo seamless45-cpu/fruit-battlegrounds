@@ -25,7 +25,7 @@ export class Engine {
     this.renderer.toneMappingExposure = Settings.get('exposure');
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = Settings.get('shadows');
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setClearColor(0x05070d, 1);
 
     this.scene = new THREE.Scene();
@@ -37,8 +37,11 @@ export class Engine {
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
 
+    // bloom is rendered at half resolution — visually almost identical, but it
+    // is the single most expensive pass so this roughly quarters its cost.
+    this.bloomScale = 0.5;
     this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      new THREE.Vector2(window.innerWidth * this.bloomScale, window.innerHeight * this.bloomScale),
       Settings.get('bloomStrength'), Settings.get('bloomRadius'), Settings.get('bloomThreshold'),
     );
     this.composer.addPass(this.bloomPass);
@@ -58,7 +61,7 @@ export class Engine {
   applySettings() {
     const s = Settings.values;
     const pr = Math.min(window.devicePixelRatio || 1, 2);
-    this.renderer.setPixelRatio(pr * s.resolutionScale);
+    this.renderer.setPixelRatio(pr * s.resolutionScale * (s.dynamicScale || 1));
     this.renderer.toneMappingExposure = s.exposure;
     this.renderer.shadowMap.enabled = s.shadows;
     this.renderer.shadowMap.needsUpdate = true;
@@ -79,7 +82,17 @@ export class Engine {
     this.renderer.setSize(w, h, false);
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
+    // composer.setSize() forces the bloom pass back to full res — put it back
+    const pr = this.renderer.getPixelRatio();
+    this.bloomPass.setSize(w * pr * this.bloomScale, h * pr * this.bloomScale);
   }
 
-  render() { this.composer.render(); }
+  render() {
+    // shadow maps are re-rendered every Nth frame (1 = every frame)
+    const interval = Settings.get('shadowInterval') || 1;
+    this._frame = (this._frame || 0) + 1;
+    this.renderer.shadowMap.autoUpdate = interval <= 1;
+    if (interval > 1 && this._frame % interval === 0) this.renderer.shadowMap.needsUpdate = true;
+    this.composer.render();
+  }
 }

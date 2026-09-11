@@ -125,6 +125,8 @@ Then click **PLAY**. (Chrome/Edge/Firefox with WebGL2.)
 
 **Advanced graphics settings (`O`).** Presets Low → Ultra plus granular control of render scale, FPS cap, exposure, bloom (strength / radius / threshold), FXAA, shadow resolution and distance, particle quality, debris amount, lightning detail, max simultaneous bolts, ground decals, camera-shake intensity, damage numbers, camera distance, mouse sensitivity and SFX volume. Everything is saved to `localStorage` and applied live.
 
+**Adaptive performance.** Shadow maps redraw every Nth frame (**Shadow interval**), bloom renders at half resolution, and when **Adaptive** is on the game watches its own median frame time and scales internal resolution plus the particle budget between 55 % and 100 % (`dynamicScale`, a runtime-only value that is never written to your saved settings).
+
 **Camera shake.** Shake is applied as high-frequency random positional offsets on X, Y and Z only. Pitch, yaw and roll are never touched — rotation is set once by `lookAt()` and left completely unchanged, because rotational shake feels disorienting, hurts aiming and target tracking, reduces visual clarity and creates excessive screen motion. (`tools/ui-test.mjs` asserts a rotation delta of ~0 while the position moves.)
 
 ---
@@ -136,6 +138,8 @@ Then click **PLAY**. (Chrome/Edge/Firefox with WebGL2.)
 - **Fire pits** — animated procedural fire with per-second tick damage.
 - **Cracks / shockwaves / tsunamis** — canvas-generated crack decals, expanding rings, and curling water walls that damage everything they pass over.
 - **Screen pause** — Fatal Destruction freezes world time and drives the red → deeper red shift.
+
+Every effect is **pooled**: geometries and materials are created once and reused, so nothing is allocated or — more importantly — disposed mid-fight. Disposing a material drops the last reference to its shader program, which makes three.js delete and then **recompile** it the next time the effect is used; that was the original source of the stutter, so pooled objects are now hidden and recycled instead.
 
 ---
 
@@ -173,7 +177,7 @@ src/
   data/loadout.js     fruit + weapon catalogue
   ui/
     index.js  hud.js  skillbar.js  inventory.js  settings.js
-tools/                headless test harnesses (see below)
+tools/                test harnesses (see below)
 ```
 
 ---
@@ -187,10 +191,31 @@ npm test              # shaders + full-skill simulation + UI/camera checks
 npm run test:skills   # casts every skill of every fruit & weapon, upgrade economy, 30 s idle leak check
 npm run test:ui       # jsdom: skill rows, cooldown wash, inventory equip/unequip, settings, POSITION-ONLY shake
 npm run test:shaders  # parses every GLSL source with a real GLSL grammar
-npm run test:browser  # optional: puppeteer smoke run + screenshots (needs a local Chrome and a server on :8123)
+npm run test:browser  # real Chrome: fires every skill, samples frame times, checks the screen is not blank
+npm run test:soak     # real Chrome: 1+ min of continuous combat, fails on any leak or drift
+npm run test:smoke    # puppeteer smoke run + screenshots (needs a local Chrome and a server on :8123)
 ```
 
-Current status: **15/15 shaders parse, 27/27 skills run clean, 13/13 UI + camera checks pass.**
+Current status: **15/15 shaders parse, 27/27 skills run clean, 13/13 UI + camera checks pass, 0 console errors in a real browser.**
+
+### Performance work
+
+Measured in a real (software-rasterised, GPU-less) Chrome:
+
+| | before | after |
+|---|---|---|
+| geometries during a 5-minute fight | 209 → **1 731** and climbing | flat at **~113** |
+| shader programs compiled mid-fight | 7 per storm | **0** |
+| JS heap over 80 s of combat | growing | flat at 20.7 MB |
+
+What caused the hitches, and what fixed it:
+
+1. **Shader recompiles.** Materials were disposed every time an effect ended (tsunami waves, gravity pillars, petrified-enemy rocks). Disposal drops the last reference to the GL program, so the next cast recompiled it — a stall on every single skill. All three are now pooled and recycled.
+2. **First-use compiles.** three.js only links a shader on its first *draw*, so `renderer.compile()` at load achieved nothing. The game now builds every pool, leaves one of each effect on screen, renders **one real warm-up frame** behind the loading overlay, then clears; a storm of every fruit and weapon skill afterwards compiles zero new programs.
+3. **Geometry churn.** Characters, weapons, projectiles and storm clouds each allocated fresh geometries per instance. They now share cached ones (marked `userData.shared` so the disposer skips them).
+4. **Per-frame cost.** Partial buffer uploads for bolts and particles, shadow-map throttling, half-res bloom, and a pixel-ratio/particle-budget scaler driven by the median frame time.
+
+Frame cost itself is small — **0.6 ms of JS logic and 4.4 ms of rendering per frame** at 489×308 with no GPU at all — so on real hardware the budget is dominated by the settings you choose, not by the simulation.
 
 ---
 

@@ -51,7 +51,7 @@ export class HUD {
 
   /* ------------------------------------------------------------ numbers */
   damageNumber(pos, amount, { crit = false, color = null, player = false, heal = false } = {}) {
-    if (!Settings.get('damageNumbers')) return;
+    if (!Settings.get('damageNumbers') || amount < 1) return;
     let el = this.numberPool.pop();
     if (!el) { el = document.createElement('div'); this.dmgLayer.appendChild(el); }
     el.className = 'dmg' + (crit ? ' crit' : '') + (heal ? ' heal' : '') + (player ? ' player' : '');
@@ -69,7 +69,7 @@ export class HUD {
       vx: (Math.random() - 0.5) * 1.6,
       scale: crit ? 1 : 0.9 + Math.min(1, amount / 4000) * 0.35,
     });
-    if (this.numbers.length > 70) {
+    if (this.numbers.length > 40) {
       const old = this.numbers.shift();
       old.el.style.display = 'none';
       this.numberPool.push(old.el);

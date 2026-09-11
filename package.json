@@ -11,12 +11,15 @@
     "test:skills": "node tools/headless.mjs",
     "test:ui": "node tools/ui-test.mjs",
     "test:shaders": "node tools/shader-check.mjs",
-    "test:browser": "node tools/smoke.mjs"
+    "test:soak": "node tools/soak-test.mjs",
+    "test:smoke": "node tools/smoke.mjs",
+    "test:browser": "node tools/browser-test.mjs"
   },
   "devDependencies": {
-    "@shaderfrog/glsl-parser": "^5.3.1",
-    "jsdom": "^27.1.0",
-    "puppeteer": "^24.34.0"
+    "@shaderfrog/glsl-parser": "^5.5.1",
+    "@sparticuz/chromium": "^152.0.0",
+    "jsdom": "^27.4.0",
+    "puppeteer-core": "^25.10.0"
   },
   "dependencies": {
     "three": "0.186.0"

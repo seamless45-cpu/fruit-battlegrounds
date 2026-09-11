@@ -232,7 +232,9 @@ export class World {
         uFog: { value: new THREE.Color(0x59406b) },
       },
       vertexShader: OCEAN_VERT, fragmentShader: OCEAN_FRAG,
-      transparent: true, fog: true,
+      // the ocean fades itself by distance (uFog) — it must NOT opt into the
+      // scene fog, or three refreshes fog uniforms this shader doesn't have.
+      transparent: true, fog: false,
     });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(4200, 4200, 90, 90), this.oceanMat);
     mesh.rotation.x = -Math.PI / 2;
@@ -288,6 +290,26 @@ export class World {
       isle.rotation.y = Math.random() * TAU;
       this.scene.add(isle);
     }
+  }
+
+  /* ------------------------------------------------------------ prewarm */
+  /** Temporary enemy so character materials compile during load, not mid-fight. */
+  prewarmEnemy() {
+    const e = this.spawnEnemy(1);
+    e.pos.set(0, -4000, 0);
+    e.mesh.position.copy(e.pos);
+    e.update(0.016);
+    e.mesh.traverse((o) => { o.userData._fc = o.frustumCulled; o.frustumCulled = false; });
+    this._prewarmEnemy = e;
+    return e;
+  }
+  prewarmCleanup() {
+    const e = this._prewarmEnemy;
+    if (!e) return;
+    const i = this.enemies.indexOf(e);
+    if (i >= 0) this.enemies.splice(i, 1);
+    e.destroy();
+    this._prewarmEnemy = null;
   }
 
   /* ------------------------------------------------------------- timers */

@@ -76,6 +76,9 @@ export class Player extends Entity {
   setWeapon(id) {
     if (this.weaponMesh) {
       this.weaponMesh.parent?.remove(this.weaponMesh);
+      this.weaponMesh.traverse((o) => {
+        if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); }
+      });
       this.weaponMesh = null;
     }
     this.weapon = id && WEAPONS[id] ? id : null;

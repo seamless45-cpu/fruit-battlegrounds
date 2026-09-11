@@ -28,13 +28,24 @@ export function dirTo(from, to, out = new THREE.Vector3()) {
 }
 
 const ROCK_GEO = new THREE.IcosahedronGeometry(1, 1);
+ROCK_GEO.userData.shared = true;
+
+// Recycled materials: creating + disposing one per petrified enemy dropped the
+// last reference to the rock shader program every time, forcing three to
+// recompile it on the next cast -> a stutter on every Gravity skill.
+const ROCK_MATS = [];
+function takeRockMat(color) {
+  const m = ROCK_MATS.pop() || new THREE.MeshStandardMaterial({
+    roughness: 1, flatShading: true, emissive: 0x2a1206, emissiveIntensity: 0.6,
+  });
+  m.color.set(color);
+  return m;
+}
 
 /** Turn an enemy into a giant rock for `duration` seconds. */
 export function rockify(entity, duration, { scale = 2.2, color = 0x6b6154 } = {}) {
   if (entity._rock) return entity._rock;
-  const mesh = new THREE.Mesh(ROCK_GEO, new THREE.MeshStandardMaterial({
-    color, roughness: 1, flatShading: true, emissive: 0x2a1206, emissiveIntensity: 0.6,
-  }));
+  const mesh = new THREE.Mesh(ROCK_GEO, takeRockMat(color));
   mesh.scale.setScalar(scale);
   mesh.position.y = scale * 0.85;
   mesh.castShadow = true;
@@ -49,8 +60,10 @@ export function rockify(entity, duration, { scale = 2.2, color = 0x6b6154 } = {}
 export function unrockify(entity) {
   if (!entity._rock) return;
   entity.mesh.remove(entity._rock);
-  entity._rock.geometry = ROCK_GEO;
-  entity._rock.material.dispose();
+  // geometry is the shared singleton; the material goes back to the pool
+  // (dropping it here would delete the shader program and force a recompile)
+  if (ROCK_MATS.length < 32) ROCK_MATS.push(entity._rock.material);
+  else entity._rock.material.dispose();
   entity._rock = null;
   entity.rig.group.visible = true;
   entity.bar.visible = true;

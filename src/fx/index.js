@@ -19,6 +19,9 @@ import { rand, randInt, clamp, TAU, tmp } from '../core/utils.js';
 export const PURPLE = 0xa855f7;
 export const NEON = 0x38bdf8;
 
+const CLOUD_GEO = new THREE.IcosahedronGeometry(1, 1);
+const PILLAR_MAX_RINGS = 10;
+
 export class FX {
   constructor(scene, camera, rig) {
     this.scene = scene;
@@ -69,7 +72,51 @@ export class FX {
 
   setWorld(world) { this.world = world; }
 
-  get pq() { return Settings.get('particleQuality'); }
+  /**
+   * Build the pools and force every shader to compile up front.
+   * Without this, the first cast of each skill pays for mesh creation and
+   * program compilation — which is exactly what a mid-fight hitch looks like.
+   */
+  prewarm() {
+    const hidden = new THREE.Vector3(0, -4000, 0);
+
+    // --- pooled meshes (Pilmae alone wants 72 boulders, 343g 30+ meteors) ---
+    this.projectiles.prewarm({ rock: 30, orb: 8, ball: 2, beast: 2, cloud: 4 });
+    for (let i = 0; i < 72; i++) this.risingRock({ pos: hidden, height: 2, riseTime: 0.1, hang: 0, scale: 0.2 });
+    for (let i = 0; i < 16; i++) this.stormCloud({ pos: hidden, radius: 2, life: 6 });
+
+    // --- one of every effect so their shaders compile now ---
+    this.explosion({ pos: hidden, radius: 1, debris: true, damage: 0 });
+    this.strike(hidden, { height: 4, life: 6 });
+    this.boltBurst(hidden, { count: 1, radius: 0.5 });
+    this.slash({ pos: hidden, dir: new THREE.Vector3(0, 0, 1), life: 6 });
+    this.pillar({ pos: hidden, height: 4, radius: 1, duration: 6 });
+    this.cracks(hidden, 1, { count: 1, life: 6 });
+    this.shockwave(hidden, { radius: 1, duration: 6 });
+    this.impact(hidden, { radius: 0.5, count: 1 });
+    this.firepit({ pos: hidden, radius: 0.5, duration: 6, pct: 0 });
+    this.debris.spawn(hidden, { count: 2, speed: 1 });
+    this.glow.spawn({ pos: hidden, vel: { x: 0, y: 0, z: 0 }, life: 6 });
+    this.smoke.spawn({ pos: hidden, vel: { x: 0, y: 0, z: 0 }, life: 6 });
+    this.tsunamis.spawn({ origin: hidden, dir: new THREE.Vector3(1, 0, 0), width: 2, height: 2, speed: 1, distance: 2.2 });
+
+    // let everything tick once so the buffers are real. NOTE: the caller is
+    // expected to run renderer.compile() (which only walks VISIBLE objects)
+    // and only then call clear() — that is what actually warms the shaders.
+    this.update(0.001);   // tiny step: every warm-up effect is still alive at render time
+
+    // The warm-up effects sit far below the arena, so frustum culling would
+    // skip them and their shaders would never be linked. Disable culling for
+    // exactly one frame; clear() puts it back.
+    this.scene.traverse((o) => {
+      if (!o.isMesh && !o.isPoints && !o.isLine && !o.isSprite) return;
+      o.userData._fc = o.frustumCulled;
+      o.frustumCulled = false;
+    });
+    this._prewarmed = true;
+  }
+
+  get pq() { return Settings.get('particleQuality') * (Settings.get('dynamicScale') || 1); }
 
   /* ==================================================================== */
   /*  SHAKE                                                               */
@@ -348,60 +395,90 @@ export class FX {
   /*  PILLARS / CLOUDS                                                    */
   /* ==================================================================== */
   /** Purple ring-stacked pillar (Gravitational Lightning). */
+  /**
+   * Gravity / lightning column. Pooled: the materials are created ONCE per
+   * record and never disposed. Disposing them used to drop the last reference
+   * to their GL program, so three deleted and then RECOMPILED the shader on
+   * every single pillar — that was the source of the repeated hitches.
+   */
   pillar({ pos, height = 42, radius = 4, color = PURPLE, duration = 1.6, rings = 7 }) {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending,
-      depthWrite: false, side: THREE.DoubleSide,
-    });
-    const tube = new THREE.Mesh(this.pillarGeo, mat);
-    tube.scale.set(radius, height, radius);
-    tube.position.y = height / 2;
-    group.add(tube);
-
-    const inner = new THREE.Mesh(this.pillarGeo, new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-    }));
-    inner.scale.set(radius * 0.45, height, radius * 0.45);
-    inner.position.y = height / 2;
-    group.add(inner);
-
-    const ringList = [];
-    for (let i = 0; i < rings; i++) {
-      const rm = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-      const r = new THREE.Mesh(this.ringGeo, rm);
-      r.rotation.x = -Math.PI / 2;
+    let rec = this._pillarPool?.pop();
+    if (!rec) {
+      const group = new THREE.Group();
+      const tube = new THREE.Mesh(this.pillarGeo, new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide,
+      }));
+      group.add(tube);
+      const inner = new THREE.Mesh(this.pillarGeo, new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide,
+      }));
+      group.add(inner);
+      const ringList = [];
+      for (let i = 0; i < PILLAR_MAX_RINGS; i++) {
+        const r = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending,
+          depthWrite: false, side: THREE.DoubleSide,
+        }));
+        r.rotation.x = -Math.PI / 2;
+        group.add(r);
+        ringList.push(r);
+      }
+      rec = { group, tube, inner, rings: ringList, t: 0, dur: duration, height, radius, color };
+    }
+    rec.t = 0; rec.dur = duration; rec.height = height; rec.radius = radius;
+    rec.tube.material.color.set(color);
+    rec.tube.scale.set(radius, height, radius);
+    rec.tube.position.y = height / 2;
+    rec.inner.scale.set(radius * 0.45, height, radius * 0.45);
+    rec.inner.position.y = height / 2;
+    for (let i = 0; i < rec.rings.length; i++) {
+      const r = rec.rings[i];
+      r.visible = i < rings;
+      if (!r.visible) continue;
+      r.material.color.set(color);
       r.scale.setScalar(radius * (1.25 + i * 0.13));
       r.position.y = 1 + i * (height / rings) * 0.9;
-      group.add(r);
-      ringList.push(r);
     }
-    group.position.copy(pos);
-    this.group.add(group);
-
-    const rec = { group, tube, inner, rings: ringList, t: 0, dur: duration, height, radius, color, active: true };
+    rec.group.position.copy(pos);
+    rec.group.visible = true;
+    this.group.add(rec.group);
     this.pillars.push(rec);
     this.decals.ring(pos, { from: 1, to: radius * 3, duration: 0.5, color, opacity: 0.8 });
     return rec;
   }
 
-  /** A thundercloud that spawns and then strikes bolts. */
+  /** Pooled thundercloud — Más Allá del Trueno spawns 120 of these. */
   stormCloud({ pos, radius = 6, color = NEON, life = 4, flash = true }) {
-    const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x2a2f45, roughness: 1, emissive: color, emissiveIntensity: 0.35,
-      transparent: true, opacity: 0.92, flatShading: true,
-    });
-    const blobs = randInt(5, 8);
-    for (let i = 0; i < blobs; i++) {
-      const s = rand(0.55, 1.15) * radius;
-      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 1), mat);
-      b.position.set(rand(-radius, radius) * 0.7, rand(-0.3, 0.5) * radius, rand(-radius, radius) * 0.5);
-      group.add(b);
+    let rec = this._cloudPool?.pop();
+    if (!rec) {
+      // one shared geometry, one material per cloud → cheap to allocate
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x2a2f45, roughness: 1, emissive: color, emissiveIntensity: 0.35,
+        transparent: true, opacity: 0.92, flatShading: true,
+      });
+      const group = new THREE.Group();
+      const blobs = [];
+      for (let i = 0; i < 6; i++) {
+        const b = new THREE.Mesh(CLOUD_GEO, mat);
+        group.add(b);
+        blobs.push(b);
+      }
+      rec = { group, mat, blobs };
     }
+    const { group, mat, blobs } = rec;
+    for (let i = 0; i < blobs.length; i++) {
+      const b = blobs[i];
+      b.scale.setScalar(rand(0.55, 1.15) * radius);
+      b.position.set(rand(-radius, radius) * 0.7, rand(-0.3, 0.5) * radius, rand(-radius, radius) * 0.5);
+    }
+    mat.emissive.setHex(color);
     group.position.copy(pos);
+    group.visible = true;
     this.group.add(group);
-    const rec = { group, mat, t: 0, dur: life, flash, color, radius, active: true, pos: pos.clone() };
+    rec.t = 0; rec.dur = life; rec.flash = flash; rec.color = color; rec.radius = radius;
+    rec.active = true;
     this.clouds.push(rec);
     return rec;
   }
@@ -527,6 +604,8 @@ export class FX {
       const k = p.t / p.dur;
       if (k >= 1) {
         this.group.remove(p.group);
+        p.group.visible = false;
+        (this._pillarPool ||= []).push(p);        // reuse, never dispose
         this.pillars.splice(i, 1);
         continue;
       }
@@ -590,6 +669,8 @@ export class FX {
       const k = c.t / c.dur;
       if (k >= 1) {
         this.group.remove(c.group);
+        c.group.visible = false;
+        (this._cloudPool ||= []).push(c);      // reuse: no new geometry/material
         this.clouds.splice(i, 1);
         continue;
       }
@@ -601,6 +682,9 @@ export class FX {
   }
 
   clear() {
+    if (this._prewarmed) {
+      this.scene.traverse((o) => { if ('_fc' in o.userData) { o.frustumCulled = o.userData._fc; delete o.userData._fc; } });
+    }
     this.glow.clear();
     this.smoke.clear();
     this.bolts.clear();
@@ -610,9 +694,9 @@ export class FX {
     this.projectiles.clear();
     this.tsunamis.clear();
     for (const s of this.slashes) { s.active = false; s.mesh.visible = false; }
-    for (const p of this.pillars) this.group.remove(p.group);
+    for (const p of this.pillars) { this.group.remove(p.group); p.group.visible = false; (this._pillarPool ||= []).push(p); }
     this.pillars.length = 0;
-    for (const c of this.clouds) this.group.remove(c.group);
+    for (const c of this.clouds) { this.group.remove(c.group); c.group.visible = false; (this._cloudPool ||= []).push(c); }
     this.clouds.length = 0;
     for (const b of this.boulders) { this.group.remove(b.mesh); (this._boulderPool ||= []).push(b.mesh); }
     this.boulders.length = 0;

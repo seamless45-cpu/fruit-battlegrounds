@@ -69,6 +69,13 @@ export class ParticleSystem {
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
 
+    this._attrs = [
+      [g.attributes.position, 3],
+      [g.attributes.pcolor, 3],
+      [g.attributes.size, 1],
+      [g.attributes.alpha, 1],
+    ];
+    this._drawn = 0;
     this.points = new THREE.Points(g, this.material);
     this.points.frustumCulled = false;
     this.points.renderOrder = renderOrder;
@@ -127,11 +134,15 @@ export class ParticleSystem {
       size[i] = size0[i] * (1 + grow[i] * (1 - t));
     }
     const g = this.geometry;
-    g.attributes.position.needsUpdate = true;
-    g.attributes.pcolor.needsUpdate = true;
-    g.attributes.size.needsUpdate = true;
-    g.attributes.alpha.needsUpdate = true;
     g.setDrawRange(0, this.count);
+    if (this.count === 0 && this._drawn === 0) return;    // nothing on screen
+    this._drawn = this.count;
+    // upload just the live slice, not the whole pool
+    for (const [attr, stride] of this._attrs) {
+      attr.clearUpdateRanges();
+      attr.addUpdateRange(0, this.count * stride);
+      attr.needsUpdate = true;
+    }
   }
 
   _kill(i) {
