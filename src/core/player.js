@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Entity } from './entity.js';
 import { makeSword, makePole, makeBisento } from './character.js';
-import { FRUITS, WEAPONS, FRUIT_COLORS } from '../data/loadout.js';
+import { FRUITS, WEAPONS, FRUIT_COLORS, FRUIT_KEYS, WEAPON_KEYS } from '../data/loadout.js';
 import { clamp, damp, rand, tmp } from './utils.js';
 import { Settings } from './settings.js';
 
@@ -121,7 +121,7 @@ export class Player extends Entity {
     return this.cast ? { t: this.cast.t, dur: this.cast.dur, kind: this.cast.kind || 'cast' } : this.attackAnim;
   }
 
-  pressedSkill(kind, index) {
+  pressedSkill(kind, index, opts = {}) {
     const list = kind === 'fruit' ? this.fruitSkills : this.weaponSkills;
     const def = list[index];
     if (!def) return false;
@@ -130,7 +130,8 @@ export class Player extends Entity {
 
     const ctx = this.makeCtx(def, key);
     if (def.hold) {
-      this.channel = { kind, index, def, key, t: 0 };
+      const codes = kind === 'fruit' ? FRUIT_KEYS : WEAPON_KEYS;
+      this.channel = { kind, index, def, key, t: 0, code: codes[index], via: opts.via || 'key' };
       def.onStart?.(ctx);
       this.world.ui?.showChannel(def.name, 0);
       return true;
@@ -289,6 +290,14 @@ export class Player extends Entity {
     if (this.comboWindow > 0) { this.comboWindow -= dt; if (this.comboWindow <= 0) this.m1Combo = 0; }
     if (this.cast) { this.cast.t += dt; if (this.cast.t >= this.cast.dur) this.cast = null; }
     if (this.channel) {
+      // the keyup can be lost (alt-tab, focus stolen by the page around an
+      // iframe) — fire the charge instead of hanging in "charging" forever
+      // (only for keyboard casts — a held USE button has no key to watch)
+      if (this.channel.via === 'key' && this.world.input && this.channel.code
+          && !this.world.input.isDown(this.channel.code)) {
+        this.releasedSkill(this.channel.kind, this.channel.index);
+        return;
+      }
       this.channel.t += dt;
       const ctx = this.makeCtx(this.channel.def, this.channel.key);
       ctx.chargeTime = this.channel.t;

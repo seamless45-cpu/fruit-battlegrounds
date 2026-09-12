@@ -140,7 +140,7 @@ export class SkillBar {
     const press = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.world.player.pressedSkill(kind, index);
+      this.world.player.pressedSkill(kind, index, { via: 'pointer' });
     };
     const release = (e) => {
       e.preventDefault();

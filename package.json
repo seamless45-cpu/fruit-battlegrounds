@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "3D Fruit Battlegrounds — browser arena brawler with Gravity, Lightning and Quake fruits plus Gravity Blade, Pole and Bisento weapons.",
+  "description": "3D Fruit Battlegrounds \u2014 browser arena brawler with Gravity, Lightning and Quake fruits plus Gravity Blade, Pole and Bisento weapons.",
   "scripts": {
     "start": "python3 -m http.server 8080 --bind 0.0.0.0",
     "serve": "npx --yes serve -l 8080 .",
@@ -11,9 +11,10 @@
     "test:skills": "node tools/headless.mjs",
     "test:ui": "node tools/ui-test.mjs",
     "test:shaders": "node tools/shader-check.mjs",
+    "test:controls": "node tools/controls-test.mjs && node tools/touch-test.mjs",
     "test:soak": "node tools/soak-test.mjs",
-    "test:smoke": "node tools/smoke.mjs",
-    "test:browser": "node tools/browser-test.mjs"
+    "test:browser": "node tools/browser-test.mjs",
+    "test:smoke": "node tools/smoke.mjs"
   },
   "devDependencies": {
     "@shaderfrog/glsl-parser": "^5.5.1",

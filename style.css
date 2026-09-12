@@ -245,6 +245,9 @@ button, .inv-slot, .dock-tab, .preset, .use{pointer-events:auto}
   pointer-events:auto;
 }
 .touch-attack span{font:800 9px/1 var(--font);letter-spacing:1.2px}
+/* #hud > * sets pointer-events:none, and an id selector outranks a class —
+   without this the ATTACK button looks fine but swallows no taps at all */
+#hud > .touch-attack{pointer-events:auto}
 .touch-attack:active{transform:scale(.94);filter:brightness(1.25)}
 
 /* ---------- damage numbers ---------- */
@@ -362,7 +365,8 @@ button, .inv-slot, .dock-tab, .preset, .use{pointer-events:auto}
 .so-hint{margin-top:18px;font:600 11px/1.8 var(--font);color:#7f8db3}
 
 #unlockOverlay{position:fixed;inset:0;z-index:30;display:grid;place-items:center;
-  background:rgba(4,6,12,.55);backdrop-filter:blur(2px);cursor:pointer}
+  background:rgba(4,6,12,.55);backdrop-filter:blur(2px);cursor:pointer;
+  pointer-events:none}          /* click-through: the canvas re-locks on click */
 #unlockOverlay[hidden]{display:none}
 .uo-inner{text-align:center;font:800 20px/1.5 var(--font);letter-spacing:3px;color:#eaf1ff}
 .uo-inner small{font:600 12px/1 var(--font);letter-spacing:1px;color:#8b9ac2}
@@ -372,15 +376,23 @@ button, .inv-slot, .dock-tab, .preset, .use{pointer-events:auto}
 #loading.gone{display:none}
 
 /* ---------- responsive / touch ---------- */
-body.touch .skill > *{position:relative;z-index:2}
+.skill > *{position:relative;z-index:2}
 .skill .cdwash{z-index:1}
-.skill .use{display:grid}
-body.touch .skill .key{display:none}
-body:not(.touch) .skill > *{position:relative;z-index:2}
-.skill .cdwash{z-index:1}
+/* desktop shows the key badge, touch devices show the USE button.
+   (the old rules set display:grid and then display:none on the same
+   selector, so the USE button was hidden on every device) */
 .skill .use{display:none}
-body:not(.touch) .skill .key{display:grid}
+.skill .key{display:grid}
+body.touch .skill .use{display:grid}
+body.touch .skill .key{display:none}
+
+#nokeyHint{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:40;display:none;
+  padding:8px 14px;border-radius:10px;background:rgba(10,14,24,.85);border:1px solid rgba(255,255,255,.14);
+  font:700 11px/1.4 var(--font);letter-spacing:.4px;color:#eaf1ff;text-align:center}
+body.nokeys #nokeyHint{display:block}
 body.touch .inv-hint{display:none}
+/* no key events ever reached the page -> fall back to the USE buttons */
+body.nokeys .skill .use{display:grid}
 
 @media (max-width: 900px){
   #playerCard{width:230px;padding:9px}

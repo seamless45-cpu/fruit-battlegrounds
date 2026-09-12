@@ -77,11 +77,16 @@ function updateAim() {
 
 /* -------------------------------------------------- touch attack button */
 let touchAttackHeld = false;
+let touchAttackPressed = false;      // consumed once per frame — taps are short
 function makeTouchAttack() {
   const btn = document.createElement('button');
   btn.className = 'touch-attack';
   btn.innerHTML = '⚔<span>ATTACK</span>';
-  const hold = (v) => (e) => { e.preventDefault(); e.stopPropagation(); touchAttackHeld = v; };
+  const hold = (v) => (e) => {
+    e.preventDefault(); e.stopPropagation();
+    touchAttackHeld = v;
+    if (v) touchAttackPressed = true;      // a tap can be shorter than a frame
+  };
   btn.addEventListener('pointerdown', hold(true));
   btn.addEventListener('pointerup', hold(false));
   btn.addEventListener('pointerleave', hold(false));
@@ -128,11 +133,21 @@ function handleSkillInput() {
     if (input.justPressed(WEAPON_KEYS[i])) p.pressedSkill('weapon', i);
     if (input.justReleased(WEAPON_KEYS[i])) p.releasedSkill('weapon', i);
   }
-  // M1 (left mouse on desktop, ATTACK button on touch)
-  if (input.mouse.left || touchAttackHeld) p.m1();
+  // M1 (left mouse on desktop, ATTACK button on touch, J if the mouse never
+  // reaches the canvas — preview iframes sometimes swallow the click)
+  // justPressed('Mouse0') catches clicks shorter than a frame on slow machines
+  if (input.mouse.left || input.justPressed('Mouse0') || touchAttackHeld || touchAttackPressed || input.isDown('KeyJ')) p.m1();
+  touchAttackPressed = false;
+  // No key events ever arrived (iframe without focus, on-screen keyboard, …):
+  // fall back to the touch-style USE buttons so the game stays playable.
+  if (!sawKeyboard && startedAt && performance.now() - startedAt > 4000) {
+    document.body.classList.add('nokeys');
+  }
 }
 
+let sawKeyboard = false;
 input.onPress = (code) => {
+  sawKeyboard = true;
   if (code === 'KeyO') ui.settings.open();
   if (code === 'KeyH') ui.toggleHelp();
   if (code === 'Escape') ui.toggleHelp(false);
@@ -142,6 +157,7 @@ input.onPress = (code) => {
 const startOverlay = document.getElementById('startOverlay');
 const unlockOverlay = document.getElementById('unlockOverlay');
 let started = false;
+let startedAt = 0;
 
 // the arena stays alive behind the title card, but nothing can hurt you yet
 world.player.invulnT = 1e9;
@@ -149,7 +165,10 @@ world.player.invulnT = 1e9;
 function startGame() {
   if (started) return;
   started = true;
+  startedAt = performance.now();
   world.player.invulnT = 0;
+  window.focus();
+  canvas.focus?.();
   startOverlay.classList.add('gone');
   setTimeout(() => { startOverlay.style.display = 'none'; }, 450);
   audio.init();
@@ -161,13 +180,17 @@ document.getElementById('btnPlay').addEventListener('click', startGame);
 startOverlay.addEventListener('pointerdown', startGame);
 
 canvas.addEventListener('pointerdown', () => {
+  window.focus();
   if (!started) return;
   if (ui.blocking) return;
   if (!IS_TOUCH) input.requestLock();
 });
 
 input.onPointerLockChange = (locked) => {
-  unlockOverlay.hidden = locked || IS_TOUCH || !started;
+  // If the browser refuses pointer lock (cross-origin preview iframes do), the
+  // overlay must stay hidden — it is a full-screen element and would otherwise
+  // swallow every click, leaving the player unable to attack at all.
+  unlockOverlay.hidden = locked || IS_TOUCH || !started || input.lockBlocked;
 };
 unlockOverlay.addEventListener('pointerdown', () => input.requestLock());
 

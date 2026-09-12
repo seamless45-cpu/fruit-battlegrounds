@@ -17,6 +17,7 @@ export class Input {
     this.mouse = { dx: 0, dy: 0, left: false, right: false, wheel: 0 };
     this.ndc = new THREE.Vector2(0, 0);     // pointer position when unlocked
     this.locked = false;
+    this.lockBlocked = false;   // pointer lock refused (cross-origin iframe, …)
     this.stick = { x: 0, y: 0, active: false };
     this.enabled = true;
 
@@ -30,9 +31,21 @@ export class Input {
 
     window.addEventListener('keydown', (e) => this._keyDown(e));
     window.addEventListener('keyup', (e) => this._keyUp(e));
-    window.addEventListener('blur', () => { this.keys.clear(); this.mouse.left = this.mouse.right = false; });
+    // A blur used to drop held keys silently, so a hold-to-charge skill would
+    // never see its keyup and the player stayed "charging" forever. Release
+    // everything on the way out instead.
+    window.addEventListener('blur', () => {
+      for (const code of this.keys) this.released.add(code);
+      this.keys.clear();
+      if (this.mouse.left) this.released.add('Mouse0');
+      if (this.mouse.right) this.released.add('Mouse2');
+      this.mouse.left = this.mouse.right = false;
+      this.stick.active = false; this.stick.x = this.stick.y = 0;
+      this._stickId = null; this._lookId = null;
+    });
 
     canvas.addEventListener('mousedown', (e) => {
+      window.focus();          // pull keyboard focus into the game (iframes!)
       if (e.button === 0) this.mouse.left = true;
       if (e.button === 2) this.mouse.right = true;
       this.pressed.add('Mouse' + e.button);
@@ -63,6 +76,12 @@ export class Input {
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
       this.onPointerLockChange?.(this.locked);
+    });
+    document.addEventListener('pointerlockerror', () => {
+      if (document.pointerLockElement === this.canvas) return;   // already locked
+      this.lockBlocked = true;
+      this.locked = false;
+      this.onPointerLockChange?.(false);
     });
 
     // ---------- touch ----------
@@ -121,10 +140,18 @@ export class Input {
   }
 
   requestLock() {
-    if (IS_TOUCH) return;
+    if (IS_TOUCH || this.lockBlocked) return;
     if (!this.locked && this.canvas.requestPointerLock) {
-      const p = this.canvas.requestPointerLock();
-      if (p && p.catch) p.catch(() => {});
+      try {
+        const p = this.canvas.requestPointerLock();
+        if (p && p.catch) p.catch(() => { this.lockBlocked = true; this.onPointerLockChange?.(false); });
+      } catch {
+        this.lockBlocked = true;               // old browsers throw synchronously
+        this.onPointerLockChange?.(false);
+      }
+    } else {
+      this.lockBlocked = true;
+      this.onPointerLockChange?.(false);
     }
   }
   releaseLock() { if (this.locked && document.exitPointerLock) document.exitPointerLock(); }

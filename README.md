@@ -43,11 +43,11 @@ Then click **PLAY**. (Chrome/Edge/Firefox with WebGL2.)
 | Action | PC | Touch |
 | --- | --- | --- |
 | Move | `W A S D` | left-half virtual stick |
-| Look / aim | mouse (click the arena to capture) | right-half drag |
+| Look / aim | mouse — pointer lock is used when the browser allows it and is never required | right-half drag |
 | Sprint / Jump | `Shift` / `Space` | — |
-| Weapon M1 combo | `Left Mouse` | **ATTACK** button |
-| Fruit skills | `Z` `X` `C` `V` `B` `F` | **USE** button on each row |
-| Sword skills | `1` `2` `3` `4` | **USE** button on each row |
+| Weapon M1 combo | `Left Mouse` (or `J`) | **ATTACK** button |
+| Fruit skills | `Z` `X` `C` `V` `B` `F` (or the **USE** button / click the row) | **USE** button on each row |
+| Sword skills | `1` `2` `3` `4` (or the **USE** button / click the row) | **USE** button on each row |
 | Charge a skill | hold the key | hold **USE** |
 | Graphics settings | `O` | ⚙ |
 | Controls panel | `H` | ? |
@@ -127,6 +127,8 @@ Then click **PLAY**. (Chrome/Edge/Firefox with WebGL2.)
 
 **Adaptive performance.** Shadow maps redraw every Nth frame (**Shadow interval**), bloom renders at half resolution, and when **Adaptive** is on the game watches its own median frame time and scales internal resolution plus the particle budget between 55 % and 100 % (`dynamicScale`, a runtime-only value that is never written to your saved settings).
 
+**Controls that always work.** Skills fire from **Z X C V B F** (fruit) and **1–4** (sword), or from the **USE** button / the row itself if no key events ever reach the page (an embedded preview frame often never gets keyboard focus). Attack with the **left mouse button**, the **ATTACK** button on touch, or **J** as a keyboard fallback. Pointer lock is optional, never required: if the browser refuses it — cross-origin iframes do — the game keeps the click-through overlay hidden so it can never block your clicks.
+
 **Camera shake.** Shake is applied as high-frequency random positional offsets on X, Y and Z only. Pitch, yaw and roll are never touched — rotation is set once by `lookAt()` and left completely unchanged, because rotational shake feels disorienting, hurts aiming and target tracking, reduces visual clarity and creates excessive screen motion. (`tools/ui-test.mjs` asserts a rotation delta of ~0 while the position moves.)
 
 ---
@@ -193,10 +195,11 @@ npm run test:ui       # jsdom: skill rows, cooldown wash, inventory equip/unequi
 npm run test:shaders  # parses every GLSL source with a real GLSL grammar
 npm run test:browser  # real Chrome: fires every skill, samples frame times, checks the screen is not blank
 npm run test:soak     # real Chrome: 1+ min of continuous combat, fails on any leak or drift
+npm run test:controls # real Chrome: plays with keyboard + mouse, touch, refused pointer lock, no keyboard
 npm run test:smoke    # puppeteer smoke run + screenshots (needs a local Chrome and a server on :8123)
 ```
 
-Current status: **15/15 shaders parse, 27/27 skills run clean, 13/13 UI + camera checks pass, 0 console errors in a real browser.**
+Current status: **15/15 shaders parse, 27/27 skills run clean, 13/13 UI + camera checks pass, controls verified in real Chrome on desktop and touch, 0 console errors.**
 
 ### Performance work
 
